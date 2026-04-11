@@ -1,0 +1,182 @@
+{
+  "glm-5.1": {
+    "description": "next-gen agentic engineering model med ekstremt stærke coding-evner og SOTA reasoning",
+    "tags": ["tools", "thinking", "cloud"],
+    "agents": ["coding", "research", "security"],
+    "capabilities": { "reasoning": 10, "coding": 10, "vision": 0, "tools": 10, "speed": 6, "context": 9 }
+  },
+  "gemma4": {
+    "description": "frontier-niveau multimodal modeller til reasoning, agentic workflows, coding og vision/audio",
+    "tags": ["vision", "tools", "thinking", "audio", "cloud"],
+    "agents": ["chat", "coding", "research"],
+    "capabilities": { "reasoning": 9, "coding": 8, "vision": 8, "tools": 8, "speed": 7, "context": 8 }
+  },
+  "minimax-m2.7": {
+    "description": "coding- og produktivitetsmodel optimeret til agentic workflows",
+    "tags": ["tools", "thinking", "cloud"],
+    "agents": ["coding", "chat"],
+    "capabilities": { "reasoning": 6, "coding": 8, "vision": 0, "tools": 7, "speed": 8, "context": 6 }
+  },
+  "qwen3.5": {
+    "description": "multimodal familie med stærk reasoning, høj utility og bred modelskala",
+    "tags": ["vision", "tools", "thinking", "cloud"],
+    "agents": ["chat", "coding", "research"],
+    "capabilities": { "reasoning": 8, "coding": 7, "vision": 7, "tools": 7, "speed": 7, "context": 8 }
+  },
+  "qwen3-coder-next": {
+    "description": "coding-fokuseret model optimeret til agentic udvikling og lokal tool-brug",
+    "tags": ["tools", "cloud"],
+    "agents": ["coding"],
+    "capabilities": { "reasoning": 7, "coding": 10, "vision": 0, "tools": 9, "speed": 7, "context": 8 }
+  },
+  "qwen3-vl": {
+    "description": "high-end vision-language modeller med avanceret multimodal forståelse",
+    "tags": ["vision", "tools", "thinking", "cloud"],
+    "agents": ["research", "chat"],
+    "capabilities": { "reasoning": 9, "coding": 5, "vision": 10, "tools": 8, "speed": 6, "context": 8 }
+  },
+  "ministral-3": {
+    "description": "edge-optimerede modeller der kører på næsten alt hardware",
+    "tags": ["vision", "tools", "cloud"],
+    "agents": ["chat"],
+    "capabilities": { "reasoning": 5, "coding": 4, "vision": 5, "tools": 5, "speed": 10, "context": 5 }
+  },
+  "devstral-small-2": {
+    "description": "24B tool-bruger der excellerer i codebase-navigation og multi-file editing",
+    "tags": ["vision", "tools", "cloud"],
+    "agents": ["coding"],
+    "capabilities": { "reasoning": 7, "coding": 9, "vision": 4, "tools": 10, "speed": 6, "context": 9 }
+  },
+  "nemotron-3-super": {
+    "description": "120B MoE model (12B aktive) med ekstrem effektivitet til komplekse multi-agent opgaver",
+    "tags": ["tools", "thinking", "cloud"],
+    "agents": ["research", "security"],
+    "capabilities": { "reasoning": 10, "coding": 7, "vision": 0, "tools": 9, "speed": 6, "context": 10 }
+  },
+  "qwen3-next": {
+    "description": "hurtig og parameter-effektiv reasoning-model med stærk performance",
+    "tags": ["tools", "thinking", "cloud"],
+    "agents": ["chat", "research"],
+    "capabilities": { "reasoning": 8, "coding": 6, "vision": 0, "tools": 7, "speed": 8, "context": 7 }
+  },
+  "kimi-k2.5": {
+    "description": "multimodal agent-model med vision, language og avancerede agentic capabilities",
+    "tags": ["vision", "tools", "thinking", "cloud"],
+    "agents": ["research", "chat"],
+    "capabilities": { "reasoning": 9, "coding": 6, "vision": 9, "tools": 8, "speed": 6, "context": 8 }
+  },
+  "glm-5": {
+    "description": "744B total / 40B aktive, dyb reasoning og langhorisont-systemopgaver",
+    "tags": ["tools", "thinking", "cloud"],
+    "agents": ["research", "security"],
+    "capabilities": { "reasoning": 10, "coding": 7, "vision": 0, "tools": 8, "speed": 5, "context": 10 }
+  },
+  "rnj-1": {
+    "description": "8B dense model optimeret til kode og STEM med SOTA open-weight performance",
+    "tags": ["tools", "cloud"],
+    "agents": ["coding"],
+    "capabilities": { "reasoning": 6, "coding": 8, "vision": 0, "tools": 7, "speed": 8, "context": 6 }
+  },
+  "nemotron-3-nano": {
+    "description": "effektiv agentic MoE-model i 4B/30B klassen med høj tool-performance",
+    "tags": ["tools", "thinking", "cloud"],
+    "agents": ["chat", "coding"],
+    "capabilities": { "reasoning": 6, "coding": 6, "vision": 0, "tools": 8, "speed": 9, "context": 6 }
+  },
+  "minimax-m2.5": {
+    "description": "produktivitets- og coding-model med stærk real-world performance",
+    "tags": ["tools", "thinking", "cloud"],
+    "agents": ["coding", "chat"],
+    "capabilities": { "reasoning": 7, "coding": 8, "vision": 0, "tools": 7, "speed": 7, "context": 7 }
+  },
+  "devstral-2": {
+    "description": "123B tool-bruger til dyb codebase-analyse og software engineering",
+    "tags": ["tools", "cloud"],
+    "agents": ["coding"],
+    "capabilities": { "reasoning": 8, "coding": 10, "vision": 0, "tools": 10, "speed": 5, "context": 10 }
+  },
+  "cogito-2.1": {
+    "description": "instruction-tuned modeller under MIT-licens til generel brug",
+    "tags": ["cloud"],
+    "agents": ["chat"],
+    "capabilities": { "reasoning": 6, "coding": 4, "vision": 0, "tools": 0, "speed": 8, "context": 6 }
+  },
+  "gemini-3-flash-preview": {
+    "description": "hurtig frontier-intelligens til lav latency og høj throughput",
+    "tags": ["vision", "tools", "thinking", "cloud"],
+    "agents": ["chat", "research"],
+    "capabilities": { "reasoning": 8, "coding": 6, "vision": 8, "tools": 7, "speed": 9, "context": 7 }
+  },
+  "glm-4.7": {
+    "description": "avanceret coding-fokuseret model med stærk reasoning",
+    "tags": ["tools", "thinking", "cloud"],
+    "agents": ["coding"],
+    "capabilities": { "reasoning": 8, "coding": 9, "vision": 0, "tools": 8, "speed": 7, "context": 8 }
+  },
+  "deepseek-v3.2": {
+    "description": "effektiv reasoning-model med høj agent-performance",
+    "tags": ["tools", "thinking", "cloud"],
+    "agents": ["research", "security"],
+    "capabilities": { "reasoning": 9, "coding": 6, "vision": 0, "tools": 7, "speed": 7, "context": 8 }
+  },
+  "minimax-m2": {
+    "description": "effektiv coding- og agentic-model til produktionsbrug",
+    "tags": ["tools", "thinking", "cloud"],
+    "agents": ["coding"],
+    "capabilities": { "reasoning": 6, "coding": 8, "vision": 0, "tools": 7, "speed": 8, "context": 6 }
+  },
+  "glm-4.6": {
+    "description": "avanceret agentic reasoning og coding-kapacitet",
+    "tags": ["tools", "thinking", "cloud"],
+    "agents": ["coding", "research"],
+    "capabilities": { "reasoning": 8, "coding": 8, "vision": 0, "tools": 8, "speed": 6, "context": 8 }
+  },
+  "minimax-m2.1": {
+    "description": "multilingual coding-model med stærk engineering-performance",
+    "tags": ["tools", "cloud"],
+    "agents": ["coding"],
+    "capabilities": { "reasoning": 6, "coding": 8, "vision": 0, "tools": 7, "speed": 7, "context": 6 }
+  },
+  "kimi-k2-thinking": {
+    "description": "avanceret thinking-mode model til dyb reasoning",
+    "tags": ["tools", "thinking", "cloud"],
+    "agents": ["research"],
+    "capabilities": { "reasoning": 10, "coding": 5, "vision": 0, "tools": 7, "speed": 5, "context": 9 }
+  },
+  "mistral-large-3": {
+    "description": "multimodal MoE-model til enterprise-workloads",
+    "tags": ["vision", "tools", "cloud"],
+    "agents": ["research", "chat"],
+    "capabilities": { "reasoning": 8, "coding": 6, "vision": 9, "tools": 7, "speed": 6, "context": 8 }
+  },
+  "gpt-oss": {
+    "description": "open-weight modeller fra OpenAI til reasoning og agentic tasks",
+    "tags": ["tools", "thinking", "cloud"],
+    "agents": ["research", "coding"],
+    "capabilities": { "reasoning": 9, "coding": 8, "vision": 0, "tools": 8, "speed": 6, "context": 9 }
+  },
+  "qwen3-coder": {
+    "description": "long-context coding-modeller til agentic udvikling",
+    "tags": ["tools", "cloud"],
+    "agents": ["coding"],
+    "capabilities": { "reasoning": 7, "coding": 9, "vision": 0, "tools": 8, "speed": 6, "context": 9 }
+  },
+  "deepseek-v3.1": {
+    "description": "hybrid thinking/non-thinking model til fleksibel reasoning",
+    "tags": ["tools", "thinking", "cloud"],
+    "agents": ["research"],
+    "capabilities": { "reasoning": 9, "coding": 6, "vision": 0, "tools": 7, "speed": 6, "context": 9 }
+  },
+  "kimi-k2": {
+    "description": "MoE-model med stærk coding- og agentic-performance",
+    "tags": ["tools", "cloud"],
+    "agents": ["coding", "research"],
+    "capabilities": { "reasoning": 7, "coding": 8, "vision": 0, "tools": 8, "speed": 6, "context": 8 }
+  },
+  "gemma3": {
+    "description": "kompakte GPU-venlige modeller med stærk vision og generel performance",
+    "tags": ["vision", "cloud"],
+    "agents": ["chat", "research"],
+    "capabilities": { "reasoning": 6, "coding": 4, "vision": 8, "tools": 0, "speed": 9, "context": 6 }
+  }
+}

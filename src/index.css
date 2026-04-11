@@ -1,0 +1,122 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500&family=Orbitron:wght@400;700&display=swap');
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --font-serif: "Cormorant Garamond", serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --font-orbitron: "Orbitron", sans-serif;
+  --color-brand: var(--brand-color, #6EC8FF);
+  --color-bg-light: var(--bg-color, #0A0F1A);
+  --color-surface: var(--surface-color, #101A2A);
+  --color-border: var(--border-color, #A8B2C0);
+  --color-text-main: var(--text-color, #A8B2C0);
+  --color-text-muted: var(--text-muted-color, #6EC8FF);
+  --color-signal: #4FE3D4;
+  --color-claw: #FF7A2F;
+}
+
+:root {
+  --brand-color: #6EC8FF;
+  --bg-color: #0A0F1A;
+  --surface-color: #101A2A;
+  --border-color: rgba(168, 178, 192, 0.2);
+  --text-color: #A8B2C0;
+  --text-muted-color: #6EC8FF;
+}
+
+:root[data-theme="modern"] {
+  --brand-color: #6EC8FF;
+  --bg-color: #0A0F1A;
+  --surface-color: #101A2A;
+  --border-color: rgba(168, 178, 192, 0.2);
+  --text-color: #A8B2C0;
+  --text-muted-color: #6EC8FF;
+}
+
+:root[data-theme="cyberpunk"] {
+  --brand-color: #00ff41;
+  --bg-color: #0d0208;
+  --surface-color: #1a1a1a;
+  --border-color: #003b00;
+  --text-color: #00ff41;
+  --text-muted-color: #008f11;
+}
+
+:root[data-theme="nordic"] {
+  --brand-color: #88c0d0;
+  --bg-color: #2e3440;
+  --surface-color: #3b4252;
+  --border-color: #4c566a;
+  --text-color: #eceff4;
+  --text-muted-color: #d8dee9;
+}
+
+:root[data-theme="terminal"] {
+  --brand-color: #00ff00;
+  --bg-color: #000000;
+  --surface-color: #0a0a0a;
+  --border-color: #003300;
+  --text-color: #00ff00;
+  --text-muted-color: #006600;
+}
+
+@layer base {
+  body {
+    background: linear-gradient(to bottom, #0A0F1A, #101A2A);
+    color: var(--text-color);
+    transition: background-color 0.3s ease, color 0.3s ease;
+    min-height: 100vh;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgba(79, 227, 212, 0.2);
+    border-radius: 10px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: rgba(79, 227, 212, 0.5);
+  }
+
+  .modern-grid {
+    background-image: 
+      radial-gradient(circle at 1px 1px, rgba(168, 178, 192, 0.05) 1px, transparent 0);
+    background-size: 24px 24px;
+  }
+
+  .btn-primary {
+    @apply bg-[#6EC8FF] text-[#0A0F1A] font-bold transition-all duration-200 ease-out;
+  }
+  .btn-primary:hover {
+    @apply bg-[#4FE3D4] shadow-[0_0_15px_rgba(79,227,212,0.5)];
+  }
+
+  .panel-active {
+    @apply border-[#4FE3D4] shadow-[0_0_10px_rgba(79,227,212,0.2)];
+  }
+}
+
+body {
+  @apply text-[#A8B2C0];
+  color-scheme: dark;
+  overflow: hidden;
+}
+
+.glass-panel {
+  @apply bg-[#101A2A]/80 backdrop-blur-md border border-[#A8B2C0]/20 shadow-sm;
+}
+
+.nc-row {
+  @apply grid grid-cols-[1fr_100px_150px] gap-4 px-4 py-1.5 border-b border-[#A8B2C0]/10 hover:bg-[#6EC8FF]/10 cursor-pointer transition-colors text-sm font-mono text-[#A8B2C0];
+}
+
+.nc-row.selected {
+  @apply bg-[#4FE3D4]/20 text-[#4FE3D4] border-[#4FE3D4]/50 shadow-[inset_0_0_10px_rgba(79,227,212,0.1)];
+}

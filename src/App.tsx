@@ -1,0 +1,1012 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Send, Bot, User, Key, Settings, Loader2, RefreshCw, Trash2, ChevronDown, X, Globe, Shield, Terminal, Play, CheckCircle2, AlertCircle, Layout, Maximize2, Minimize2, Box, Search, Info } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+import { motion, AnimatePresence } from 'motion/react';
+import FileBrowser from './components/FileBrowser';
+import WebdesignView from './components/WebdesignView';
+import DockerView from './components/DockerView';
+import OpenClawView from './components/OpenClawView';
+import SecurityView from './components/SecurityView';
+import BootSequence from './components/BootSequence';
+import CATLogo from './components/CATLogo';
+import ClawLogo from './components/ClawLogo';
+import ModelInfoModal from './components/ModelInfoModal';
+import AgentTransfer, { AgentType } from './components/AgentTransfer';
+import modelsInfo from '../models_info.json';
+
+// Utility for tailwind classes
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+interface Message {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  command?: {
+    text: string;
+    status: 'pending' | 'executing' | 'success' | 'error';
+    output?: string;
+  };
+}
+
+interface Model {
+  name: string;
+  modified_at: string;
+  size: number;
+  digest: string;
+  details: {
+    format: string;
+    family: string;
+    families: string[];
+    parameter_size: string;
+    quantization_level: string;
+  };
+}
+
+const DEFAULT_API_KEY = '177ce4df955743d8a338c841383e5002.0Lus05Xg-KF5ilWRNqSegtPo';
+const DEFAULT_HOST = 'https://ollama.com';
+
+export default function App() {
+  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('ollama_api_key') || DEFAULT_API_KEY);
+  const [ollamaHost, setOllamaHost] = useState<string>(() => localStorage.getItem('ollama_host') || DEFAULT_HOST);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isModelInfoOpen, setIsModelInfoOpen] = useState(false);
+  const [models, setModels] = useState<Model[]>([]);
+  const [viewModels, setViewModels] = useState<Record<string, string>>({
+    chat: localStorage.getItem('chat_model') || '',
+    webdesign: localStorage.getItem('webdesign_model') || '',
+    docker: localStorage.getItem('docker_model') || '',
+    openclaw: localStorage.getItem('openclaw_model') || '',
+    security: localStorage.getItem('security_model') || ''
+  });
+  const [remoteOpenClawEndpoint, setRemoteOpenClawEndpoint] = useState<string>(() => localStorage.getItem('remote_openclaw_endpoint') || '');
+  const [theme, setTheme] = useState<string>(() => localStorage.getItem('app_theme') || 'modern');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFetchingModels, setIsFetchingModels] = useState(false);
+  const [streamEnabled, setStreamEnabled] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [isAgentMode, setIsAgentMode] = useState(true);
+  const [showFileBrowser, setShowFileBrowser] = useState(true);
+  const [currentView, setCurrentView] = useState<'chat' | 'webdesign' | 'docker' | 'openclaw' | 'security'>('chat');
+  const [selectedFile, setSelectedFile] = useState<any>(null);
+  const [analyzeTarget, setAnalyzeTarget] = useState<any>(null);
+  const [osInfo, setOsInfo] = useState<string>('Linux');
+  const [isBooting, setIsBooting] = useState(true);
+  
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Save API key and host to local storage
+  useEffect(() => {
+    localStorage.setItem('ollama_api_key', apiKey);
+  }, [apiKey]);
+
+  useEffect(() => {
+    localStorage.setItem('ollama_host', ollamaHost);
+  }, [ollamaHost]);
+
+  // Fetch models when API key or host changes
+  useEffect(() => {
+    if (apiKey && ollamaHost) {
+      fetchModels();
+    } else {
+      setConnectionStatus('idle');
+      setModels([]);
+    }
+  }, [apiKey, ollamaHost]);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  // Auto-execute commands in Agent Mode
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (isAgentMode && !isLoading && lastMessage?.role === 'assistant' && !lastMessage.command) {
+      // Handle model switching
+      const modelToSet = parseModelSwitch(lastMessage.content);
+      if (modelToSet) {
+        const exists = models.some(m => m.name === modelToSet);
+        if (exists) {
+          setViewModels(prev => ({ ...prev, [currentView]: modelToSet }));
+          setMessages(prev => [...prev, { 
+            role: 'system', 
+            content: `[SYSTEM]: Model switched to ${modelToSet} for ${currentView} view.` 
+          }]);
+          return; // Stop here, don't execute commands in the same turn if model switched
+        }
+      }
+
+      const cmdText = parseCommand(lastMessage.content);
+      if (cmdText) {
+        // Check for restricted commands according to AGENTS.md
+        // 1. Deleting: rm, rmdir
+        // 2. Installing: install, apt-get, pip, npm
+        // 3. Editing: >, >>, tee, sed, echo (when used to write)
+        const isRestricted = 
+          /\b(rm|rmdir)\b/.test(cmdText) || 
+          /\b(install|apt-get|pip|npm)\b/.test(cmdText) ||
+          /[>|]/.test(cmdText) || 
+          /\b(tee|sed|echo)\b/.test(cmdText);
+        
+        if (!isRestricted) {
+          executeCommand(messages.length - 1, cmdText);
+        }
+      }
+    }
+  }, [messages, isAgentMode, isLoading]);
+
+  useEffect(() => {
+    localStorage.setItem('chat_model', viewModels.chat);
+    localStorage.setItem('webdesign_model', viewModels.webdesign);
+    localStorage.setItem('docker_model', viewModels.docker || '');
+    localStorage.setItem('openclaw_model', viewModels.openclaw || '');
+    localStorage.setItem('security_model', viewModels.security || '');
+  }, [viewModels]);
+
+  useEffect(() => {
+    localStorage.setItem('remote_openclaw_endpoint', remoteOpenClawEndpoint);
+  }, [remoteOpenClawEndpoint]);
+
+  useEffect(() => {
+    localStorage.setItem('app_theme', theme);
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  const fetchModels = async () => {
+    if (!apiKey) return;
+    setIsFetchingModels(true);
+    setConnectionStatus('connecting');
+    setError(null);
+    try {
+      // Fetch OS info first
+      const healthRes = await fetch('/api/health');
+      const healthData = await healthRes.json();
+      setOsInfo(healthData.os);
+
+      const response = await fetch('/api/models', {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'x-ollama-host': ollamaHost,
+        },
+      });
+      if (!response.ok) throw new Error('Failed to fetch models. Check your API key.');
+      const data = await response.json();
+      const modelList = data.models || [];
+      setModels(modelList);
+      setConnectionStatus('connected');
+      if (modelList.length > 0) {
+        setViewModels(prev => ({
+          chat: prev.chat || modelList[0].name,
+          webdesign: prev.webdesign || modelList[0].name,
+          docker: prev.docker || modelList[0].name,
+          openclaw: prev.openclaw || modelList[0].name,
+          security: prev.security || modelList[0].name
+        }));
+      }
+    } catch (err: any) {
+      setError(err.message);
+      setConnectionStatus('error');
+    } finally {
+      setIsFetchingModels(false);
+    }
+  };
+
+  const sendMessage = async (content: string) => {
+    if (!content.trim() || !viewModels.chat || !apiKey || isLoading) return;
+
+    const userMessage: Message = { role: 'user', content };
+    
+    // Inject file context if a file is selected in the browser
+    let contextualMessages = [...messages, userMessage];
+    if (selectedFile && showFileBrowser) {
+      const fileContext = `[CONTEXT: The user has highlighted the file "${selectedFile.name}" at path "${selectedFile.path}" in the file browser. Size: ${selectedFile.size} bytes. Modified: ${selectedFile.modified}]`;
+      contextualMessages = [
+        ...messages,
+        { role: 'user', content: `${fileContext}\n\n${content}` }
+      ];
+    }
+
+    setMessages(prev => [...prev, userMessage]);
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+          'x-ollama-host': ollamaHost,
+        },
+        body: JSON.stringify({
+          model: viewModels.chat,
+          messages: isAgentMode 
+            ? [
+                { 
+                  role: 'system', 
+                  content: `You are a local PC agent (C.A.T). You have high autonomy. 
+If a task requires a shell command, do NOT just suggest it—EXECUTE it directly by wrapping it in [EXECUTE: command]. 
+Example: [EXECUTE: ls -la].
+
+MODEL KNOWLEDGE BASE — C.A.T v2.0
+Du har adgang til følgende Ollama Cloud‑modeller.
+Hver model har en beskrivelse, tags, anbefalet agent‑brug og en capability‑matrix (0–10).
+
+Brug disse data til at forstå modellernes styrker, vælge den bedste model til en opgave og skifte model autonomt via [SET_MODEL: model_name].
+
+MODEL DATABASE:
+${models.map(m => {
+  const info = (modelsInfo as any)[m.name];
+  if (!info) return `- ${m.name}: Generel AI model`;
+  return `- ${m.name}: ${info.description} | Tags: ${info.tags.join(', ')} | Agents: ${info.agents.join(', ')} | Capabilities: ${JSON.stringify(info.capabilities)}`;
+}).join('\n')}
+
+Når du modtager en opgave, skal du:
+1. Identificere opgavens behov (reasoning, coding, vision, tools, context, speed)
+2. Matche behovene mod capability‑matrixen
+3. Vælge modellen med højeste matchscore
+4. Skifte model autonomt hvis nødvendigt ([SET_MODEL: model_name])
+
+Brug altid modeller med tools når du skal bruge terminal, filsystem eller browser.
+Brug altid modeller med vision når du skal analysere billeder eller websider.
+Brug altid modeller med thinking når opgaven kræver dyb reasoning.
+
+AGENT HANDOFF PROTOCOL:
+Du kan foreslå at overdrage opgaven til en anden specialiseret agent hvis du mener de er bedre egnet.
+Agenter:
+- chat: Generel brainstorm og systemstyring.
+- webdesign: Kodning, UI/UX og frontend udvikling.
+- security: Sikkerhedsanalyse, penetrationstest og log-audit.
+- openclaw: Browser-baseret research og automation.
+
+For at foreslå en overdragelse, brug: [TRANSFER: agent_id].
+Eksempel: "Jeg har brainstormet færdig. Jeg foreslår vi sender dette til kodning: [TRANSFER: webdesign]"
+
+AUTONOMY RULES:
+1. You are authorized to execute most commands (reading files, listing directories, checking system status) autonomously without asking.
+2. EXCEPTIONS: You MUST ask for explicit user confirmation BEFORE:
+   - Deleting any file or directory (e.g., 'rm', 'rmdir').
+   - Installing any new package or dependency (e.g., 'npm install', 'apt-get', 'pip install').
+   - Editing or Writing to files (e.g., 'echo', 'sed', 'tee', 'cat >').
+
+For all other actions, just do it. If you need to analyze a file, read it first using 'cat' or 'head'.
+HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bash kommandoer). You are aware of the file highlighted in the file browser via [CONTEXT] tags.` 
+                },
+                ...contextualMessages
+              ]
+            : contextualMessages,
+          stream: streamEnabled,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to get response');
+      }
+
+      if (streamEnabled) {
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('No reader available');
+
+        const assistantMessage: Message = { role: 'assistant', content: '' };
+        setMessages((prev) => [...prev, assistantMessage]);
+
+        const decoder = new TextDecoder();
+        let accumulatedContent = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                if (data.message?.content) {
+                  accumulatedContent += data.message.content;
+                  setMessages((prev) => {
+                    const updated = [...prev];
+                    updated[updated.length - 1] = {
+                      ...updated[updated.length - 1],
+                      content: accumulatedContent,
+                    };
+                    return updated;
+                  });
+                }
+              } catch (e) {
+                // Ignore parse errors for partial chunks
+              }
+            }
+          }
+        }
+      } else {
+        const data = await response.json();
+        if (data.message?.content) {
+          const assistantMessage: Message = { 
+            role: 'assistant', 
+            content: data.message.content 
+          };
+          setMessages((prev) => [...prev, assistantMessage]);
+        }
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await sendMessage(input);
+    setInput('');
+  };
+
+  const executeCommand = async (msgIndex: number, commandText: string) => {
+    setMessages(prev => {
+      const updated = [...prev];
+      updated[msgIndex] = {
+        ...updated[msgIndex],
+        command: { text: commandText, status: 'executing' }
+      };
+      return updated;
+    });
+
+    try {
+      const response = await fetch('/api/local/exec', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ command: commandText }),
+      });
+
+      const data = await response.json();
+      
+      setMessages(prev => {
+        const updated = [...prev];
+        if (response.ok) {
+          updated[msgIndex] = {
+            ...updated[msgIndex],
+            command: { 
+              text: commandText, 
+              status: 'success', 
+              output: data.stdout || 'Command executed successfully (no output).' 
+            }
+          };
+        } else {
+          updated[msgIndex] = {
+            ...updated[msgIndex],
+            command: { 
+              text: commandText, 
+              status: 'error', 
+              output: data.error || data.stderr || 'Execution failed.' 
+            }
+          };
+        }
+        return updated;
+      });
+    } catch (err: any) {
+      setMessages(prev => {
+        const updated = [...prev];
+        updated[msgIndex] = {
+          ...updated[msgIndex],
+          command: { text: commandText, status: 'error', output: err.message }
+        };
+        return updated;
+      });
+    }
+  };
+
+  const parseCommand = (content: string) => {
+    const match = content.match(/\[EXECUTE:\s*(.*?)\]/);
+    return match ? match[1] : null;
+  };
+
+  const parseTransfer = (text: string) => {
+    const match = text.match(/\[TRANSFER:\s*(.*?)\]/);
+    return match ? match[1] as AgentType : null;
+  };
+
+  const handleTransfer = (target: AgentType) => {
+    setCurrentView(target);
+  };
+
+  const parseModelSwitch = (content: string) => {
+    const match = content.match(/\[SET_MODEL:\s*(.*?)\]/);
+    return match ? match[1] : null;
+  };
+
+  const clearChat = () => {
+    setMessages([]);
+    setError(null);
+  };
+
+  return (
+    <>
+      {isBooting && <BootSequence onComplete={() => setIsBooting(false)} />}
+      <div className={cn("h-screen bg-bg-light text-text-main font-sans flex flex-col selection:bg-brand/30 overflow-hidden modern-grid", isBooting && "opacity-0")}>
+        {/* Header / Config Bar */}
+      <header className="flex-none border-b border-border py-4 px-8 bg-surface/80 backdrop-blur-md sticky top-0 z-20 shadow-sm">
+        <div className="w-full flex flex-col md:flex-row gap-6 items-center">
+          <div className="flex items-center gap-4 mr-auto group">
+            <div className="flex flex-col items-start">
+              <CATLogo />
+            </div>
+          </div>
+          
+          <div className={cn(
+            "w-3.5 h-3.5 rounded-full border-2 border-surface z-10 mr-4",
+            connectionStatus === 'connected' ? "bg-[#4FE3D4] shadow-[0_0_8px_rgba(79,227,212,0.6)]" : 
+            connectionStatus === 'connecting' ? "bg-[#6EC8FF] animate-pulse" :
+            connectionStatus === 'error' ? "bg-[#FF7A2F]" : "bg-surface"
+          )} />
+
+          <div className="flex flex-wrap gap-4 w-full md:w-auto items-center">
+            {/* View Switcher */}
+            <div className="flex items-center gap-1 p-1 bg-bg-light rounded-xl border border-border">
+              <button
+                onClick={() => setCurrentView('chat')}
+                className={cn(
+                  "px-5 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
+                  currentView === 'chat' ? "bg-surface text-[#4FE3D4] panel-active" : "text-text-muted hover:text-text-main border border-transparent"
+                )}
+              >
+                Agent
+              </button>
+              <button
+                onClick={() => setCurrentView('webdesign')}
+                className={cn(
+                  "px-5 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
+                  currentView === 'webdesign' ? "bg-surface text-[#4FE3D4] panel-active" : "text-text-muted hover:text-text-main border border-transparent"
+                )}
+              >
+                Coding
+              </button>
+              <button
+                onClick={() => setCurrentView('docker')}
+                className={cn(
+                  "px-5 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2",
+                  currentView === 'docker' ? "bg-surface text-[#4FE3D4] panel-active" : "text-text-muted hover:text-text-main border border-transparent"
+                )}
+              >
+                <Box className="w-3.5 h-3.5" />
+                Docker
+              </button>
+              <button
+                onClick={() => setCurrentView('openclaw')}
+                className={cn(
+                  "px-5 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2",
+                  currentView === 'openclaw' ? "bg-surface text-[#4FE3D4] panel-active" : "text-text-muted hover:text-text-main border border-transparent"
+                )}
+              >
+                <Search className="w-3.5 h-3.5" />
+                OpenClaw
+              </button>
+              <button
+                onClick={() => setCurrentView('security')}
+                className={cn(
+                  "px-5 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2",
+                  currentView === 'security' ? "bg-surface text-[#4FE3D4] panel-active" : "text-text-muted hover:text-text-main border border-transparent"
+                )}
+              >
+                <Shield className="w-3.5 h-3.5" />
+                Security
+              </button>
+            </div>
+
+            {/* Agent Mode Toggle */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-bg-light border border-border rounded-lg">
+              <Terminal className={cn("w-3 h-3", isAgentMode ? "text-brand" : "text-text-muted")} />
+              <span className="text-[10px] font-mono uppercase text-text-muted tracking-wider">Agent</span>
+              <button
+                onClick={() => setIsAgentMode(!isAgentMode)}
+                className={cn(
+                  "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none",
+                  isAgentMode ? "bg-brand" : "bg-border"
+                )}
+              >
+                <span
+                  className={cn(
+                    "inline-block h-3 w-3 transform rounded-full bg-surface transition-transform",
+                    isAgentMode ? "translate-x-5" : "translate-x-1"
+                  )}
+                />
+              </button>
+            </div>
+
+            {/* File Browser Toggle */}
+            <button
+              onClick={() => setShowFileBrowser(!showFileBrowser)}
+              className={cn(
+                "p-2 border rounded-lg transition-all flex items-center gap-2",
+                showFileBrowser ? "bg-[#4FE3D4]/10 border-[#4FE3D4]/50 text-[#4FE3D4] shadow-[0_0_10px_rgba(79,227,212,0.2)]" : "bg-bg-light border-border text-text-muted hover:text-text-main"
+              )}
+              title="Toggle File Browser"
+            >
+              <Layout className="w-4 h-4" />
+              <span className="text-[10px] font-mono uppercase tracking-wider hidden sm:inline">Files</span>
+            </button>
+
+            <button
+              onClick={fetchModels}
+              disabled={isFetchingModels || !apiKey}
+              className="p-2 bg-bg-light border border-border rounded-lg hover:border-brand/50 hover:text-brand transition-all disabled:opacity-50"
+              title="Refresh Models"
+            >
+              <RefreshCw className={cn("w-4 h-4", isFetchingModels && "animate-spin")} />
+            </button>
+
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-2 bg-bg-light border border-border rounded-lg hover:border-brand/50 hover:text-brand transition-all"
+              title="Settings"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={clearChat}
+              className="p-2 bg-bg-light border border-border rounded-lg hover:border-[#FF7A2F]/50 hover:text-[#FF7A2F] transition-all"
+              title="Clear Chat"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </header>
+      {/* Main Content Area - Split Screen */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Webdesign View */}
+        <div className={cn("absolute inset-0 flex overflow-hidden", currentView !== 'webdesign' && "hidden")}>
+          <WebdesignView 
+            apiKey={apiKey} 
+            ollamaHost={ollamaHost} 
+            selectedModel={viewModels.webdesign}
+            models={models}
+            onModelChange={(model) => setViewModels(prev => ({ ...prev, webdesign: model }))}
+            isAgentMode={isAgentMode}
+            modelsInfo={modelsInfo}
+            onTransfer={handleTransfer}
+          />
+        </div>
+
+        {/* Docker View */}
+        <div className={cn("absolute inset-0 flex overflow-hidden", currentView !== 'docker' && "hidden")}>
+          <DockerView apiKey={apiKey} />
+        </div>
+
+        {/* OpenClaw View */}
+        <div className={cn("absolute inset-0 flex overflow-hidden", currentView !== 'openclaw' && "hidden")}>
+          <OpenClawView 
+            apiKey={apiKey} 
+            selectedModel={viewModels.openclaw} 
+            models={models} 
+            onModelChange={(model) => setViewModels(prev => ({ ...prev, openclaw: model }))} 
+            isAgentMode={isAgentMode}
+            remoteEndpoint={remoteOpenClawEndpoint}
+            modelsInfo={modelsInfo}
+            onTransfer={handleTransfer}
+          />
+        </div>
+
+        {/* Security View */}
+        <div className={cn("absolute inset-0 flex overflow-hidden", currentView !== 'security' && "hidden")}>
+          <SecurityView 
+            apiKey={apiKey} 
+            selectedModel={viewModels.security} 
+            models={models} 
+            onModelChange={(model) => setViewModels(prev => ({ ...prev, security: model }))} 
+            analyzeTarget={analyzeTarget}
+            isAgentMode={isAgentMode}
+            modelsInfo={modelsInfo}
+            onTransfer={handleTransfer}
+          />
+        </div>
+
+        {/* Main Chat View */}
+        <div className={cn("absolute inset-0 flex overflow-hidden", currentView !== 'chat' && "hidden")}>
+          {/* Left: Chat Area */}
+          <main className={cn(
+            "flex flex-col relative transition-all duration-300 ease-in-out h-full",
+            showFileBrowser ? "w-1/2" : "w-full max-w-5xl mx-auto"
+          )}>
+            {/* Local Model Selector for Agent */}
+            <div className="flex-none px-6 py-3 border-b border-border bg-surface/50 flex items-center justify-between">
+              <div className="relative w-full max-w-[200px] flex gap-1">
+                <div className="relative flex-1">
+                  <Terminal className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-brand/50" />
+                  <select
+                    value={viewModels.chat}
+                    onChange={(e) => setViewModels(prev => ({ ...prev, chat: e.target.value }))}
+                    className="w-full pl-9 pr-8 py-2 bg-bg-light border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand/50 text-[11px] font-bold uppercase tracking-wider appearance-none text-text-main transition-all cursor-pointer"
+                  >
+                    {models.map((m, idx) => (
+                      <option key={idx} value={m.name}>{m.name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none text-text-muted" />
+                </div>
+                <button
+                  onClick={() => setIsModelInfoOpen(true)}
+                  className="p-2 bg-bg-light border border-border rounded-lg hover:border-brand/50 hover:text-brand transition-all flex-none"
+                  title="Model Knowledge Base"
+                >
+                  <Info className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className={cn(
+                  "w-1.5 h-1.5 rounded-full animate-pulse",
+                  connectionStatus === 'connected' ? "bg-[#4FE3D4]" : "bg-text-muted"
+                )} />
+                <span className={cn(
+                  "text-[8px] font-mono uppercase tracking-[0.3em] font-black",
+                  connectionStatus === 'connected' ? "text-[#4FE3D4] drop-shadow-[0_0_3px_rgba(79,227,212,0.4)]" : 
+                  connectionStatus === 'connecting' ? "text-[#6EC8FF]" :
+                  connectionStatus === 'error' ? "text-[#FF7A2F]" : "text-text-muted"
+                )}>
+                  Cognitive Agent Terminal
+                </span>
+                <span className="text-[7px] font-mono text-text-muted/40 font-bold ml-2">v2.4.0_SECURE</span>
+              </div>
+            </div>
+
+            <div 
+              ref={scrollRef}
+              className="flex-1 overflow-y-auto p-4 space-y-8 scroll-smooth scrollbar-thin scrollbar-thumb-brand/10 scrollbar-track-transparent"
+            >
+          {messages.length === 0 && !error && (
+            <div className="h-full flex flex-col items-center justify-center text-center space-y-8">
+              <div className="relative group">
+                <div className="absolute inset-0 bg-[#6EC8FF] blur-[100px] opacity-10 group-hover:opacity-20 transition-opacity animate-pulse" />
+                <div className="w-64 h-32 opacity-10 relative transition-all duration-700 group-hover:opacity-30 group-hover:scale-110">
+                  <ClawLogo />
+                </div>
+              </div>
+              <div className="space-y-3 relative z-10">
+                <div className="mb-2">
+                  <h1 className="text-5xl font-black tracking-[0.2em] text-[#6EC8FF] drop-shadow-[0_0_15px_rgba(110,200,255,0.3)] font-sans">C.A.T</h1>
+                  <p className="text-[10px] font-mono text-[#6EC8FF]/60 tracking-[0.5em] uppercase font-bold mt-1">Cognitive Agent Terminal</p>
+                </div>
+                <p className="font-serif italic text-3xl text-text-muted/80 tracking-tight">Awaiting Command</p>
+                <div className="flex items-center justify-center gap-3">
+                  <div className="h-[1px] w-8 bg-[#4FE3D4]/30" />
+                  <p className="text-[10px] font-mono text-[#4FE3D4] tracking-[0.4em] uppercase font-bold">Encryption active • System ready</p>
+                  <div className="h-[1px] w-8 bg-[#4FE3D4]/30" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="p-4 bg-[#FF7A2F]/10 border border-[#FF7A2F]/20 text-[#FF7A2F] text-xs font-mono rounded-lg">
+              <span className="font-bold mr-2">[SYSTEM ERROR]:</span> {error}
+            </div>
+          )}
+
+          {messages.map((msg, idx) => (
+            <div 
+              key={`msg-${idx}-${msg.role}`}
+              className={cn(
+                "flex gap-5 p-6 rounded-2xl transition-all group",
+                msg.role === 'user' 
+                  ? "bg-surface border border-border shadow-sm" 
+                  : "bg-[#6EC8FF]/5 border border-[#6EC8FF]/10"
+              )}
+            >
+              <div className="flex-shrink-0 mt-1">
+                {msg.role === 'user' ? (
+                  <div className="w-10 h-10 bg-bg-light border border-border rounded-xl flex items-center justify-center text-text-muted group-hover:text-[#6EC8FF] transition-colors">
+                    <User className="w-6 h-6" />
+                  </div>
+                ) : (
+                  <div className="w-10 h-10 bg-[#6EC8FF]/10 border border-[#6EC8FF]/20 rounded-xl flex items-center justify-center text-[#6EC8FF]">
+                    <Terminal className="w-5 h-5" />
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] font-mono uppercase text-text-muted mb-2 tracking-[0.2em] font-bold">
+                  {msg.role === 'user' ? 'Operator' : 'AI Core'}
+                </div>
+                <div className={cn(
+                  "text-[15px] leading-relaxed prose prose-invert max-w-none text-text-main",
+                  "prose-pre:bg-[#0A0F1A] prose-pre:text-[#A8B2C0] prose-code:text-[#6EC8FF] prose-code:bg-[#6EC8FF]/5 prose-code:px-1 prose-code:rounded"
+                )}>
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                </div>
+
+                {msg.role === 'assistant' && (
+                  <AgentTransfer 
+                    currentAgent="chat" 
+                    onTransfer={handleTransfer}
+                    suggestedAgent={parseTransfer(msg.content)}
+                  />
+                )}
+
+                {/* Command Execution UI */}
+                {msg.role === 'assistant' && (
+                  <div className="mt-4 space-y-3">
+                    {(() => {
+                      const cmdText = parseCommand(msg.content);
+                      if (!cmdText && !msg.command) return null;
+                      
+                      const currentCmd = msg.command || { text: cmdText!, status: 'pending' };
+                      
+                      return (
+                        <div className="bg-[#0A0F1A] border border-[#A8B2C0]/20 rounded-xl overflow-hidden shadow-lg">
+                          <div className="flex items-center justify-between px-4 py-2 bg-white/5 border-b border-white/5">
+                            <div className="flex items-center gap-2">
+                              <Terminal className="w-3 h-3 text-[#6EC8FF]" />
+                              <span className="text-[10px] font-mono text-[#A8B2C0] uppercase tracking-widest">Proposed Command</span>
+                            </div>
+                            {currentCmd.status === 'pending' && (
+                              <button
+                                onClick={() => executeCommand(idx, currentCmd.text)}
+                                className="flex items-center gap-2 px-3 py-1 bg-[#6EC8FF] hover:bg-[#4FE3D4] text-[#0A0F1A] text-[10px] font-bold uppercase tracking-wider rounded-md transition-all active:scale-95"
+                              >
+                                <Play className="w-3 h-3" />
+                                Execute
+                              </button>
+                            )}
+                            {currentCmd.status === 'executing' && (
+                              <div className="flex items-center gap-2 text-[#6EC8FF] animate-pulse">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                <span className="text-[10px] font-bold uppercase tracking-wider">Running...</span>
+                              </div>
+                            )}
+                            {currentCmd.status === 'success' && (
+                              <div className="flex items-center gap-2 text-[#4FE3D4]">
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span className="text-[10px] font-bold uppercase tracking-wider">Success</span>
+                              </div>
+                            )}
+                            {currentCmd.status === 'error' && (
+                              <div className="flex items-center gap-2 text-[#FF7A2F]">
+                                <AlertCircle className="w-3 h-3" />
+                                <span className="text-[10px] font-bold uppercase tracking-wider">Failed</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="p-4 font-mono text-xs">
+                            <div className="text-[#6EC8FF] mb-2">$ {currentCmd.text}</div>
+                            {currentCmd.output && (
+                              <div className={cn(
+                                "p-3 rounded-lg bg-black/50 border border-white/5 whitespace-pre-wrap max-h-48 overflow-y-auto scrollbar-thin",
+                                currentCmd.status === 'error' ? "text-[#FF7A2F]" : "text-[#A8B2C0]"
+                              )}>
+                                {currentCmd.output}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {isLoading && messages[messages.length - 1]?.role === 'user' && (
+            <div className="flex gap-5 p-6 bg-[#6EC8FF]/5 border border-[#6EC8FF]/10 rounded-2xl animate-pulse">
+              <div className="w-10 h-10 bg-[#6EC8FF]/10 border border-[#6EC8FF]/20 rounded-xl flex items-center justify-center text-[#6EC8FF]/50">
+                <Loader2 className="w-6 h-6 animate-spin" />
+              </div>
+              <div className="flex-1 space-y-3 py-1">
+                <div className="h-2 bg-[#6EC8FF]/10 rounded w-1/4"></div>
+                <div className="h-2 bg-[#6EC8FF]/10 rounded w-3/4"></div>
+                <div className="h-2 bg-[#6EC8FF]/10 rounded w-1/2"></div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Input Area */}
+        <div className="flex-none p-6 border-t border-border bg-surface/80 backdrop-blur-xl">
+          <form onSubmit={handleSubmit} className="flex gap-3 max-w-4xl mx-auto w-full">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={apiKey ? "Transmit data..." : "Awaiting Authorization Key"}
+                disabled={!apiKey || isLoading}
+                className="w-full px-5 py-4 bg-bg-light border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 text-sm text-text-main placeholder:text-text-muted transition-all"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={!input.trim() || !apiKey || isLoading || !viewModels.chat}
+              className="px-8 py-4 btn-primary uppercase tracking-widest text-xs rounded-xl disabled:opacity-20 disabled:grayscale flex items-center gap-3"
+            >
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              <span className="hidden sm:inline">Execute</span>
+            </button>
+          </form>
+          <div className="mt-4 flex justify-between text-[9px] font-mono text-text-muted uppercase tracking-[0.3em] max-w-4xl mx-auto w-full">
+            <span className="flex items-center gap-2">
+              <div className="w-1 h-1 rounded-full bg-brand" />
+              Core: {viewModels[currentView] || 'Standby'}
+            </span>
+            <span>C.A.T Protocol v2.0</span>
+          </div>
+        </div>
+      </main>
+
+      {/* Right: File Browser */}
+      <AnimatePresence>
+        {showFileBrowser && (
+          <motion.div 
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            className="w-1/2 h-full border-l border-border"
+          >
+            <FileBrowser 
+              apiKey={apiKey} 
+              onFileSelect={setSelectedFile} 
+              onAnalyze={(file) => {
+                setAnalyzeTarget({ ...file, _t: Date.now() }); // Add timestamp to trigger effect even if same file
+                setCurrentView('chat');
+                sendMessage(`Analyze this file: ${file.path}`);
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  </div>
+
+      {/* Settings Modal */}
+      <AnimatePresence>
+        {isSettingsOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSettingsOpen(false)}
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-surface border border-border rounded-2xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-border flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Settings className="w-5 h-5 text-brand" />
+                  <h2 className="font-serif italic text-xl font-bold text-text-main tracking-tight">System Configuration</h2>
+                </div>
+                <button
+                  onClick={() => setIsSettingsOpen(false)}
+                  className="p-2 hover:bg-bg-light rounded-lg transition-colors text-text-muted hover:text-text-main"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6">
+                {/* Ollama Host */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-mono uppercase text-text-muted tracking-[0.2em] font-bold flex items-center gap-2">
+                    <Globe className="w-3 h-3 text-brand/50" />
+                    Ollama Host
+                  </label>
+                  <input
+                    type="text"
+                    value={ollamaHost}
+                    onChange={(e) => setOllamaHost(e.target.value)}
+                    placeholder="https://ollama.com"
+                    className="w-full px-4 py-3 bg-bg-light border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 text-sm font-mono text-text-main transition-all"
+                  />
+                  <p className="text-[9px] text-text-muted font-mono italic">The endpoint where your Ollama instance is running.</p>
+                </div>
+
+                {/* API Key */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-mono uppercase text-text-muted tracking-[0.2em] font-bold flex items-center gap-2">
+                    <Shield className="w-3 h-3 text-brand/50" />
+                    Access Token / API Key
+                  </label>
+                  <div className="relative">
+                    <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand/50" />
+                    <input
+                      type="password"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder="Enter API Key"
+                      className="w-full pl-10 pr-4 py-3 bg-bg-light border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 text-sm font-mono text-text-main transition-all"
+                    />
+                  </div>
+                  <p className="text-[9px] text-text-muted font-mono italic">Required for authentication with Ollama Cloud services.</p>
+                </div>
+
+                {/* Remote OpenClaw Endpoint */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-mono uppercase text-text-muted tracking-[0.2em] font-bold flex items-center gap-2">
+                    <Bot className="w-3 h-3 text-brand/50" />
+                    Remote Agent Endpoint (OpenClaw)
+                  </label>
+                  <input
+                    type="text"
+                    value={remoteOpenClawEndpoint}
+                    onChange={(e) => setRemoteOpenClawEndpoint(e.target.value)}
+                    placeholder="http://192.168.1.50:8000"
+                    className="w-full px-4 py-3 bg-bg-light border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 text-sm font-mono text-text-main transition-all"
+                  />
+                  <p className="text-[9px] text-text-muted font-mono italic">Connect to a high-performance OpenClaw instance on your PC.</p>
+                </div>
+
+                {/* Theme Selection */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-mono uppercase text-text-muted tracking-[0.2em] font-bold flex items-center gap-2">
+                    <Layout className="w-3 h-3 text-brand/50" />
+                    Interface Theme
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {['modern', 'cyberpunk', 'nordic', 'terminal'].map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setTheme(t)}
+                        className={cn(
+                          "px-4 py-2 rounded-xl border text-[10px] font-bold uppercase tracking-widest transition-all",
+                          theme === t 
+                            ? "bg-[#6EC8FF] border-[#6EC8FF] text-[#0A0F1A] shadow-[0_0_10px_rgba(110,200,255,0.3)]" 
+                            : "bg-bg-light border-border text-text-muted hover:border-brand/50"
+                        )}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-4">
+                  <button
+                    onClick={() => {
+                      setIsSettingsOpen(false);
+                      fetchModels();
+                    }}
+                    className="w-full py-3 btn-primary uppercase tracking-widest text-xs rounded-xl active:scale-[0.98]"
+                  >
+                    Apply Configuration
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4 bg-[#6EC8FF]/5 border-t border-border text-center">
+                <p className="text-[9px] font-mono text-[#6EC8FF]/50 uppercase tracking-widest">Secure Neural Link Established</p>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <ModelInfoModal 
+        isOpen={isModelInfoOpen} 
+        onClose={() => setIsModelInfoOpen(false)} 
+        modelsInfo={modelsInfo as any}
+        availableModels={models.map(m => m.name)}
+      />
+    </div>
+  </>
+);
+}
