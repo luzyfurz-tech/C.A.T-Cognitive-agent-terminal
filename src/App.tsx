@@ -50,7 +50,7 @@ const DEFAULT_HOST = 'https://ollama.com';
 
 export default function App() {
   const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('ollama_api_key') || DEFAULT_API_KEY);
-  const [ollamaHost, setOllamaHost] = useState<string>(() => localStorage.getItem('ollama_host') || DEFAULT_HOST);
+  const ollamaHost = DEFAULT_HOST;
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isModelInfoOpen, setIsModelInfoOpen] = useState(false);
   const [models, setModels] = useState<Model[]>([]);
@@ -80,14 +80,10 @@ export default function App() {
   
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Save API key and host to local storage
+  // Save API key to local storage
   useEffect(() => {
     localStorage.setItem('ollama_api_key', apiKey);
   }, [apiKey]);
-
-  useEffect(() => {
-    localStorage.setItem('ollama_host', ollamaHost);
-  }, [ollamaHost]);
 
   // Fetch models when API key or host changes
   useEffect(() => {
@@ -905,19 +901,18 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
 
               <div className="p-6 space-y-6">
                 {/* Ollama Host */}
-                <div className="space-y-2">
+                <div className="space-y-2 opacity-60">
                   <label className="text-[10px] font-mono uppercase text-text-muted tracking-[0.2em] font-bold flex items-center gap-2">
                     <Globe className="w-3 h-3 text-brand/50" />
-                    Ollama Host
+                    Ollama Host (Locked)
                   </label>
                   <input
                     type="text"
                     value={ollamaHost}
-                    onChange={(e) => setOllamaHost(e.target.value)}
-                    placeholder="https://ollama.com"
-                    className="w-full px-4 py-3 bg-bg-light border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 text-sm font-mono text-text-main transition-all"
+                    readOnly
+                    className="w-full px-4 py-3 bg-bg-light border border-border rounded-xl focus:outline-none text-sm font-mono text-text-main/50 cursor-not-allowed transition-all"
                   />
-                  <p className="text-[9px] text-text-muted font-mono italic">The endpoint where your Ollama instance is running.</p>
+                  <p className="text-[9px] text-text-muted font-mono italic">This instance is configured to always use https://ollama.com.</p>
                 </div>
 
                 {/* API Key */}

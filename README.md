@@ -23,7 +23,7 @@ Før du starter, skal du have følgende installeret på din maskine:
 ## Konfiguration
 
 1.  **Start Ollama**: Sørg for at Ollama kører på din maskine.
-2.  **Miljøvariabler**: Projektet bruger standardindstillinger, men du kan konfigurere dem i appen under "Settings".
+2.  **Miljøvariabler**: Projektet bruger standardindstillinger. Ollama Host er låst til `https://ollama.com` for at sikre kompatibilitet med Ollama Cloud services. Du kan konfigurere din API-nøgle i appen under "Settings".
 
 ## Start af applikationen
 

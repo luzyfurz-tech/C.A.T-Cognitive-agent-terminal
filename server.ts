@@ -440,7 +440,7 @@ async function startServer() {
     }
 
     try {
-      const ollamaHost = req.headers['x-ollama-host'] as string || process.env.OLLAMA_HOST || "https://ollama.com";
+      const ollamaHost = "https://ollama.com";
       const ollamaApiKey = process.env.OLLAMA_API_KEY || apiKey;
 
       const response = await fetch(`${ollamaHost}/api/tags`, {
@@ -466,7 +466,7 @@ async function startServer() {
     }
 
     try {
-      const ollamaHost = req.headers['x-ollama-host'] as string || process.env.OLLAMA_HOST || "https://ollama.com";
+      const ollamaHost = "https://ollama.com";
       const ollamaApiKey = process.env.OLLAMA_API_KEY || apiKey;
 
       const ollama = new Ollama({
