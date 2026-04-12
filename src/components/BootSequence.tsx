@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import ClawLogo from './ClawLogo';
+import CATLogo from './CATLogo';
 
 const BOOT_MESSAGES = [
   "INITIALIZING D.E.X C.A.T PROTOCOL...",
@@ -8,7 +8,6 @@ const BOOT_MESSAGES = [
   "ENCRYPTION ACTIVE • CHANNEL SEALED",
   "LOADING NODE REGISTRY...",
   "SCANNING PRINTER NODES [ OK ]",
-  "SYNCING OPENCLAW AGENT...",
   "AUTHENTICATING RINKHALS NODES...",
   "BOOTSTRAPPING FARM COMMANDER...",
   "LOADING C.A.T INTERFACE MODULES...",
@@ -98,7 +97,7 @@ export default function BootSequence({ onComplete }: { onComplete: () => void })
               animate={{ opacity: 1 }}
               className="space-y-4 flex flex-col items-center"
             >
-              <ClawLogo />
+              <CATLogo />
               <div className="text-6xl font-serif italic font-black text-[#00BFFF] drop-shadow-[0_0_15px_rgba(0,191,255,0.8)]">
                 C.A.T
               </div>

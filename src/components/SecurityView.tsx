@@ -114,12 +114,21 @@ Eksempel: "Sikkerhedsanalysen er færdig. Jeg foreslår vi sender resultaterne t
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
+    let timeoutId: NodeJS.Timeout;
+
     const fetchAuditLogs = async () => {
+      if (!apiKey) return;
       try {
         const response = await fetch('/api/logs/audit', {
           headers: { Authorization: `Bearer ${apiKey}` }
         });
         
+        if (!response.ok) {
+          if (response.status === 401) return; // Silent on unauthorized
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
         const contentType = response.headers.get("content-type");
         if (!contentType || !contentType.includes("application/json")) {
           const text = await response.text();
@@ -128,15 +137,23 @@ Eksempel: "Sikkerhedsanalysen er færdig. Jeg foreslår vi sender resultaterne t
         }
 
         const data = await response.json();
-        setAuditLogs(data.logs || []);
+        if (isMounted) {
+          setAuditLogs(data.logs || []);
+        }
       } catch (err) {
         console.error("Failed to fetch audit logs:", err);
+      } finally {
+        if (isMounted) {
+          timeoutId = setTimeout(fetchAuditLogs, 5000);
+        }
       }
     };
     
     fetchAuditLogs();
-    const interval = setInterval(fetchAuditLogs, 3000);
-    return () => clearInterval(interval);
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
   }, [apiKey]);
 
   const parseCommand = (text: string) => {
@@ -157,7 +174,10 @@ Eksempel: "Sikkerhedsanalysen er færdig. Jeg foreslår vi sender resultaterne t
     try {
       const response = await fetch('/api/local/exec', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
         body: JSON.stringify({ command, cwd: 'web_design_workspace/security/' })
       });
       const data = await response.json();

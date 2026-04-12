@@ -7,11 +7,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import FileBrowser from './components/FileBrowser';
 import WebdesignView from './components/WebdesignView';
 import DockerView from './components/DockerView';
-import OpenClawView from './components/OpenClawView';
 import SecurityView from './components/SecurityView';
+import OllamaWebView from './components/OllamaWebView';
 import BootSequence from './components/BootSequence';
 import CATLogo from './components/CATLogo';
-import ClawLogo from './components/ClawLogo';
 import ModelInfoModal from './components/ModelInfoModal';
 import AgentTransfer, { AgentType } from './components/AgentTransfer';
 import modelsInfo from '../models_info.json';
@@ -58,10 +57,9 @@ export default function App() {
     chat: localStorage.getItem('chat_model') || '',
     webdesign: localStorage.getItem('webdesign_model') || '',
     docker: localStorage.getItem('docker_model') || '',
-    openclaw: localStorage.getItem('openclaw_model') || '',
+    ollamaWeb: localStorage.getItem('ollamaweb_model') || '',
     security: localStorage.getItem('security_model') || ''
   });
-  const [remoteOpenClawEndpoint, setRemoteOpenClawEndpoint] = useState<string>(() => localStorage.getItem('remote_openclaw_endpoint') || '');
   const [theme, setTheme] = useState<string>(() => localStorage.getItem('app_theme') || 'modern');
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -72,7 +70,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [isAgentMode, setIsAgentMode] = useState(true);
   const [showFileBrowser, setShowFileBrowser] = useState(true);
-  const [currentView, setCurrentView] = useState<'chat' | 'webdesign' | 'docker' | 'openclaw' | 'security'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'webdesign' | 'docker' | 'ollamaWeb' | 'security'>('chat');
   const [selectedFile, setSelectedFile] = useState<any>(null);
   const [analyzeTarget, setAnalyzeTarget] = useState<any>(null);
   const [osInfo, setOsInfo] = useState<string>('Linux');
@@ -143,13 +141,9 @@ export default function App() {
     localStorage.setItem('chat_model', viewModels.chat);
     localStorage.setItem('webdesign_model', viewModels.webdesign);
     localStorage.setItem('docker_model', viewModels.docker || '');
-    localStorage.setItem('openclaw_model', viewModels.openclaw || '');
+    localStorage.setItem('ollamaweb_model', viewModels.ollamaWeb || '');
     localStorage.setItem('security_model', viewModels.security || '');
   }, [viewModels]);
-
-  useEffect(() => {
-    localStorage.setItem('remote_openclaw_endpoint', remoteOpenClawEndpoint);
-  }, [remoteOpenClawEndpoint]);
 
   useEffect(() => {
     localStorage.setItem('app_theme', theme);
@@ -183,8 +177,8 @@ export default function App() {
           chat: prev.chat || modelList[0].name,
           webdesign: prev.webdesign || modelList[0].name,
           docker: prev.docker || modelList[0].name,
-          openclaw: prev.openclaw || modelList[0].name,
-          security: prev.security || modelList[0].name
+          security: prev.security || modelList[0].name,
+          ollamaWeb: prev.ollamaWeb || modelList[0].name
         }));
       }
     } catch (err: any) {
@@ -261,7 +255,7 @@ Agenter:
 - chat: Generel brainstorm og systemstyring.
 - webdesign: Kodning, UI/UX og frontend udvikling.
 - security: Sikkerhedsanalyse, penetrationstest og log-audit.
-- openclaw: Browser-baseret research og automation.
+- ollamaWeb: Web research og interaktion (Søge, Fetch, Screenshot, Click/Type).
 
 For at foreslå en overdragelse, brug: [TRANSFER: agent_id].
 Eksempel: "Jeg har brainstormet færdig. Jeg foreslår vi sender dette til kodning: [TRANSFER: webdesign]"
@@ -482,14 +476,14 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
                 Docker
               </button>
               <button
-                onClick={() => setCurrentView('openclaw')}
+                onClick={() => setCurrentView('ollamaWeb')}
                 className={cn(
                   "px-5 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2",
-                  currentView === 'openclaw' ? "bg-surface text-[#4FE3D4] panel-active" : "text-text-muted hover:text-text-main border border-transparent"
+                  currentView === 'ollamaWeb' ? "bg-surface text-[#4FE3D4] panel-active" : "text-text-muted hover:text-text-main border border-transparent"
                 )}
               >
-                <Search className="w-3.5 h-3.5" />
-                OpenClaw
+                <Globe className="w-3.5 h-3.5" />
+                OllamaWeb
               </button>
               <button
                 onClick={() => setCurrentView('security')}
@@ -584,20 +578,6 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
           <DockerView apiKey={apiKey} />
         </div>
 
-        {/* OpenClaw View */}
-        <div className={cn("absolute inset-0 flex overflow-hidden", currentView !== 'openclaw' && "hidden")}>
-          <OpenClawView 
-            apiKey={apiKey} 
-            selectedModel={viewModels.openclaw} 
-            models={models} 
-            onModelChange={(model) => setViewModels(prev => ({ ...prev, openclaw: model }))} 
-            isAgentMode={isAgentMode}
-            remoteEndpoint={remoteOpenClawEndpoint}
-            modelsInfo={modelsInfo}
-            onTransfer={handleTransfer}
-          />
-        </div>
-
         {/* Security View */}
         <div className={cn("absolute inset-0 flex overflow-hidden", currentView !== 'security' && "hidden")}>
           <SecurityView 
@@ -606,6 +586,19 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
             models={models} 
             onModelChange={(model) => setViewModels(prev => ({ ...prev, security: model }))} 
             analyzeTarget={analyzeTarget}
+            isAgentMode={isAgentMode}
+            modelsInfo={modelsInfo}
+            onTransfer={handleTransfer}
+          />
+        </div>
+
+        {/* OllamaWeb View */}
+        <div className={cn("absolute inset-0 flex overflow-hidden", currentView !== 'ollamaWeb' && "hidden")}>
+          <OllamaWebView 
+            apiKey={apiKey} 
+            selectedModel={viewModels.ollamaWeb}
+            models={models}
+            onModelChange={(model) => setViewModels(prev => ({ ...prev, ollamaWeb: model }))}
             isAgentMode={isAgentMode}
             modelsInfo={modelsInfo}
             onTransfer={handleTransfer}
@@ -670,7 +663,7 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
               <div className="relative group">
                 <div className="absolute inset-0 bg-[#6EC8FF] blur-[100px] opacity-10 group-hover:opacity-20 transition-opacity animate-pulse" />
                 <div className="w-64 h-32 opacity-10 relative transition-all duration-700 group-hover:opacity-30 group-hover:scale-110">
-                  <ClawLogo />
+                  <CATLogo />
                 </div>
               </div>
               <div className="space-y-3 relative z-10">
@@ -932,22 +925,6 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
                     />
                   </div>
                   <p className="text-[9px] text-text-muted font-mono italic">Required for authentication with Ollama Cloud services.</p>
-                </div>
-
-                {/* Remote OpenClaw Endpoint */}
-                <div className="space-y-2">
-                  <label className="text-[10px] font-mono uppercase text-text-muted tracking-[0.2em] font-bold flex items-center gap-2">
-                    <Bot className="w-3 h-3 text-brand/50" />
-                    Remote Agent Endpoint (OpenClaw)
-                  </label>
-                  <input
-                    type="text"
-                    value={remoteOpenClawEndpoint}
-                    onChange={(e) => setRemoteOpenClawEndpoint(e.target.value)}
-                    placeholder="http://192.168.1.50:8000"
-                    className="w-full px-4 py-3 bg-bg-light border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 text-sm font-mono text-text-main transition-all"
-                  />
-                  <p className="text-[9px] text-text-muted font-mono italic">Connect to a high-performance OpenClaw instance on your PC.</p>
                 </div>
 
                 {/* Theme Selection */}

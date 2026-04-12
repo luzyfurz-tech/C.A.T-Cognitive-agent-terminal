@@ -1,12 +1,13 @@
 import express from "express";
 import path from "path";
+
 import { createServer as createViteServer } from "vite";
 import { Ollama } from "ollama";
 import { Client } from "ssh2";
 import { exec, spawn } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
-import { existsSync, mkdirSync, createWriteStream, statSync as fsStatSync } from "fs";
+import { existsSync, mkdirSync, createWriteStream, statSync as fsStatSync, readFileSync, writeFileSync } from "fs";
 import archiver from "archiver";
 import { chromium } from "playwright-extra";
 import stealth from "puppeteer-extra-plugin-stealth";
@@ -19,7 +20,7 @@ const execAsync = promisify(exec);
 
 // Ensure web_design_workspace directory structure exists
 const WEB_DESIGN_ROOT = path.join(process.cwd(), "web_design_workspace");
-const WORKSPACE_DIRS = ["projects", "screenshots", "logs", "temp", "docker", "openclaw", "security", "browser_data"];
+const WORKSPACE_DIRS = ["projects", "logs", "temp", "docker", "security", "screenshots"];
 
 if (!existsSync(WEB_DESIGN_ROOT)) {
   mkdirSync(WEB_DESIGN_ROOT);
@@ -45,16 +46,20 @@ let auditLogs: any[] = [];
 
 // Ensure projects.json exists
 if (!existsSync(PROJECTS_JSON_PATH)) {
-  fs.writeFile(PROJECTS_JSON_PATH, JSON.stringify({ active_project: null, projects: [] }, null, 2));
+  writeFileSync(PROJECTS_JSON_PATH, JSON.stringify({ active_project: null, projects: [] }, null, 2));
 }
 
 // Ensure audit.json exists
 if (!existsSync(AUDIT_LOG_PATH)) {
-  fs.writeFile(AUDIT_LOG_PATH, JSON.stringify([], null, 2));
+  writeFileSync(AUDIT_LOG_PATH, JSON.stringify([], null, 2));
 } else {
-  fs.readFile(AUDIT_LOG_PATH, 'utf-8').then(data => {
-    try { auditLogs = JSON.parse(data); } catch (e) { auditLogs = []; }
-  });
+  try {
+    const data = readFileSync(AUDIT_LOG_PATH, 'utf-8');
+    auditLogs = JSON.parse(data);
+  } catch (e) {
+    console.error("Failed to parse audit logs:", e);
+    auditLogs = [];
+  }
 }
 
 async function logAudit(command: string, status: string, stdout: string = "", stderr: string = "", type: string = "command") {
@@ -152,13 +157,14 @@ async function startServer() {
 
   // Local Shell Execution Endpoint
   app.post("/api/local/exec", async (req, res) => {
-    const { command } = req.body;
+    const { command, cwd } = req.body;
     const apiKey = req.headers.authorization?.split(" ")[1];
 
     if (!apiKey) return res.status(401).json({ error: "Unauthorized" });
 
     try {
-      const { stdout, stderr } = await execAsync(command);
+      const options = cwd ? { cwd: path.resolve(process.cwd(), cwd) } : {};
+      const { stdout, stderr } = await execAsync(command, options);
       await logAudit(command, "Success", stdout, stderr);
       res.json({ 
         status: "Success", 
@@ -167,9 +173,10 @@ async function startServer() {
       });
     } catch (error: any) {
       console.error("Local Exec Error:", error);
-      await logAudit(command, "Error", error.stdout || "", error.stderr || error.message);
+      const errorMessage = error.stderr || error.message || "Unknown error";
+      await logAudit(command, "Error", error.stdout || "", errorMessage);
       res.status(500).json({ 
-        error: error.message,
+        error: errorMessage,
         stderr: error.stderr,
         stdout: error.stdout
       });
@@ -435,12 +442,13 @@ async function startServer() {
   // API Proxy for Ollama Tags (List Models)
   app.get("/api/models", async (req, res) => {
     const apiKey = req.headers.authorization?.split(" ")[1];
+    const xHost = req.headers['x-ollama-host'] as string;
     if (!apiKey) {
       return res.status(401).json({ error: "API Key required" });
     }
 
     try {
-      const ollamaHost = "https://ollama.com";
+      const ollamaHost = xHost || process.env.OLLAMA_HOST || "https://ollama.com";
       const ollamaApiKey = process.env.OLLAMA_API_KEY || apiKey;
 
       const response = await fetch(`${ollamaHost}/api/tags`, {
@@ -460,13 +468,14 @@ async function startServer() {
   app.post("/api/chat", async (req, res) => {
     const { model, messages, stream } = req.body;
     const apiKey = req.headers.authorization?.split(" ")[1];
+    const xHost = req.headers['x-ollama-host'] as string;
 
     if (!apiKey) {
       return res.status(401).json({ error: "API Key required" });
     }
 
     try {
-      const ollamaHost = "https://ollama.com";
+      const ollamaHost = xHost || process.env.OLLAMA_HOST || "https://ollama.com";
       const ollamaApiKey = process.env.OLLAMA_API_KEY || apiKey;
 
       const ollama = new Ollama({
@@ -502,6 +511,142 @@ async function startServer() {
     } catch (error: any) {
       console.error("Ollama API Error:", error);
       res.status(error.status || 500).json({ error: error.message || "Internal Server Error" });
+    }
+  });
+
+  // API Proxy for Ollama Web Search (Using Local Playwright)
+  app.post("/api/web-search", async (req, res) => {
+    const { query } = req.body;
+    const apiKey = req.headers.authorization?.split(" ")[1];
+
+    if (!apiKey) {
+      return res.status(401).json({ error: "API Key required" });
+    }
+
+    let browser;
+    try {
+      browser = await chromium.launch({
+        headless: true,
+      });
+      const page = await browser.newPage();
+      
+      // Use DuckDuckGo for search scraping
+      await page.goto(`https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`, { waitUntil: "networkidle", timeout: 20000 });
+      
+      const results = await page.evaluate(() => {
+        const items = Array.from(document.querySelectorAll('.result'));
+        return items.slice(0, 5).map(item => ({
+          title: item.querySelector('.result__title')?.textContent?.trim() || 'No title',
+          url: item.querySelector('.result__a')?.getAttribute('href') || '#',
+          snippet: item.querySelector('.result__snippet')?.textContent?.trim() || 'No snippet available'
+        }));
+      });
+      
+      res.json({ results });
+    } catch (error: any) {
+      console.error("Local Web Search Error:", error);
+      res.status(500).json({ error: `Search failed: ${error.message}` });
+    } finally {
+      if (browser) await browser.close().catch(console.error);
+    }
+  });
+
+  // Helper for human-like delay
+  const humanDelay = (min = 500, max = 1500) => new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1) + min)));
+
+  // API Proxy for Ollama Web Fetch (Using Local Playwright)
+  app.post("/api/web-fetch", async (req, res) => {
+    const { url, screenshot = false } = req.body;
+    const apiKey = req.headers.authorization?.split(" ")[1];
+
+    if (!apiKey) {
+      return res.status(401).json({ error: "API Key required" });
+    }
+
+    let browser;
+    try {
+      browser = await chromium.launch({
+        headless: true,
+      });
+      const page = await browser.newPage();
+      await page.goto(url, { waitUntil: "networkidle", timeout: 45000 });
+      
+      const content = await page.evaluate(() => {
+        // Basic readability cleanup
+        const toRemove = document.querySelectorAll('script, style, nav, footer, header, iframe, noscript');
+        toRemove.forEach(el => el.remove());
+        return document.body.innerText;
+      });
+
+      let screenshotPath = null;
+      let screenshotUrl = null;
+
+      if (screenshot) {
+        const filename = `web-snap-${Date.now()}.png`;
+        screenshotPath = path.join(SCREENSHOTS_DIR, filename);
+        await page.screenshot({ path: screenshotPath, fullPage: false });
+        screenshotUrl = `/preview/${filename}`;
+      }
+      
+      res.json({ url, content: content.substring(0, 15000).trim(), screenshot: screenshotUrl });
+    } catch (error: any) {
+      console.error("Local Web Fetch Error:", error);
+      res.status(500).json({ error: `Fetch failed: ${error.message}` });
+    } finally {
+      if (browser) await browser.close().catch(console.error);
+    }
+  });
+
+  // API Proxy for Ollama Web Actions
+  app.post("/api/web-action", async (req, res) => {
+    const { url, action, selector, text, key } = req.body;
+    const apiKey = req.headers.authorization?.split(" ")[1];
+
+    if (!apiKey) {
+      return res.status(401).json({ error: "API Key required" });
+    }
+
+    let browser;
+    try {
+      browser = await chromium.launch({
+        headless: true,
+      });
+      const page = await browser.newPage();
+      if (url) await page.goto(url, { waitUntil: "networkidle", timeout: 45000 });
+      
+      let result = "Action completed";
+
+      if (action === "click") {
+        await page.click(selector);
+        result = `Clicked ${selector}`;
+      } else if (action === "type") {
+        await page.type(selector, text, { delay: 100 });
+        result = `Typed into ${selector}`;
+      } else if (action === "press") {
+        await page.keyboard.press(key);
+        result = `Pressed ${key}`;
+      }
+
+      await humanDelay();
+      
+      // Always take a screenshot after action for visual feedback
+      const filename = `action-snap-${Date.now()}.png`;
+      const screenshotPath = path.join(SCREENSHOTS_DIR, filename);
+      await page.screenshot({ path: screenshotPath });
+      const screenshotUrl = `/preview/${filename}`;
+
+      const content = await page.evaluate(() => {
+        const toRemove = document.querySelectorAll('script, style, nav, footer, header, iframe, noscript');
+        toRemove.forEach(el => el.remove());
+        return document.body.innerText;
+      });
+      
+      res.json({ status: "Success", result, screenshot: screenshotUrl, content: content.substring(0, 5000).trim() });
+    } catch (error: any) {
+      console.error("Local Web Action Error:", error);
+      res.status(500).json({ error: `Action failed: ${error.message}` });
+    } finally {
+      if (browser) await browser.close().catch(console.error);
     }
   });
 
@@ -628,75 +773,6 @@ async function startServer() {
     }
   });
 
-const BROWSER_DATA_DIR = path.join(WEB_DESIGN_ROOT, "browser_data");
-
-// Helper for human-like delay
-const humanDelay = (min = 500, max = 1500) => new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * (max - min + 1) + min)));
-
-  // Playwright Browser API
-  app.post("/api/browser/exec", async (req, res) => {
-    const { action, url, script, selector, text, key } = req.body;
-    const apiKey = req.headers.authorization?.split(" ")[1];
-
-    if (!apiKey) return res.status(401).json({ error: "Unauthorized" });
-
-    let context;
-    try {
-      // Use persistent context to save logins/cookies
-      context = await chromium.launchPersistentContext(BROWSER_DATA_DIR, {
-        headless: true, // Keep it headless for server environment
-        viewport: { width: 1280, height: 720 },
-        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-      });
-
-      const page = context.pages()[0] || await context.newPage();
-      
-      // Stealth is automatically applied by chromium.use(stealth())
-
-      if (action === "goto") {
-        await page.goto(url, { waitUntil: "networkidle" });
-        await humanDelay();
-        const content = await page.content();
-        res.json({ status: "Success", content });
-      } else if (action === "screenshot") {
-        if (url) await page.goto(url, { waitUntil: "networkidle" });
-        await humanDelay();
-        const filename = `screenshot-${Date.now()}.png`;
-        const screenshotPath = path.join(SCREENSHOTS_DIR, filename);
-        await page.screenshot({ path: screenshotPath, fullPage: true });
-        res.json({ 
-          status: "Success", 
-          filename,
-          path: screenshotPath
-        });
-      } else if (action === "click") {
-        await page.click(selector);
-        await humanDelay();
-        res.json({ status: "Success", message: `Clicked ${selector}` });
-      } else if (action === "type") {
-        await page.type(selector, text, { delay: 100 }); // Human-like typing delay
-        await humanDelay();
-        res.json({ status: "Success", message: `Typed into ${selector}` });
-      } else if (action === "press") {
-        await page.keyboard.press(key);
-        await humanDelay();
-        res.json({ status: "Success", message: `Pressed ${key}` });
-      } else if (action === "script") {
-        if (url) await page.goto(url, { waitUntil: "networkidle" });
-        await humanDelay();
-        const result = await page.evaluate(script);
-        res.json({ status: "Success", result });
-      } else {
-        throw new Error("Invalid browser action");
-      }
-    } catch (error: any) {
-      console.error("Browser Exec Error:", error);
-      res.status(500).json({ error: error.message });
-    } finally {
-      if (context) await context.close();
-    }
-  });
-
   // Serve Web Projects for Preview with Navigation Guard
   app.get("/preview/*", async (req, res, next) => {
     const filePath = path.join(WEB_PROJECTS_DIR, req.params[0]);
@@ -803,6 +879,7 @@ const humanDelay = (min = 500, max = 1500) => new Promise(resolve => setTimeout(
   });
 
   app.use("/preview", express.static(WEB_PROJECTS_DIR));
+  app.use("/preview", express.static(SCREENSHOTS_DIR));
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

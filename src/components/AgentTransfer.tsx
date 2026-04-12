@@ -8,7 +8,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export type AgentType = 'chat' | 'webdesign' | 'security' | 'openclaw';
+export type AgentType = 'chat' | 'webdesign' | 'security' | 'ollamaWeb';
 
 interface AgentTransferProps {
   currentAgent: AgentType;
@@ -20,7 +20,7 @@ const AGENTS: { id: AgentType; label: string; icon: any; color: string }[] = [
   { id: 'chat', label: 'Main Chat', icon: Bot, color: 'text-[#6EC8FF]' },
   { id: 'webdesign', label: 'Coding', icon: Code, color: 'text-[#4FE3D4]' },
   { id: 'security', label: 'Security', icon: Shield, color: 'text-[#FF7A2F]' },
-  { id: 'openclaw', label: 'Browser', icon: Globe, color: 'text-[#A8B2C0]' },
+  { id: 'ollamaWeb', label: 'OllamaWeb', icon: Globe, color: 'text-brand' },
 ];
 
 export default function AgentTransfer({ currentAgent, onTransfer, suggestedAgent }: AgentTransferProps) {
