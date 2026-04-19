@@ -154,6 +154,18 @@ export default function App() {
     }
   }, [apiKey, ollamaHost]);
 
+  // Load chat history on mount
+  useEffect(() => {
+    fetch(`/api/chat/history/chat_main`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.messages && data.messages.length > 0) {
+          setMessages(data.messages);
+        }
+      })
+      .catch(console.error);
+  }, []);
+
   // Auto-scroll to bottom
   useEffect(() => {
     if (scrollRef.current) {
@@ -281,6 +293,17 @@ export default function App() {
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
     setError(null);
+
+    // Save to persistent DB
+    fetch('/api/chat/message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        view_id: 'chat_main',
+        role: 'user',
+        content: content
+      })
+    }).catch(console.error);
 
     // Log the user's message to the mission feed
     fetch('/api/mission/log', {
@@ -422,6 +445,17 @@ CRITICAL: If the user requests a new project or a bulk operation, you MUST ident
         
         // Log the final response to the mission feed
         if (accumulatedContent) {
+          fetch('/api/chat/message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+            body: JSON.stringify({
+              view_id: 'chat_main',
+              role: 'assistant',
+              content: accumulatedContent,
+              thinking: accumulatedThinking
+            })
+          }).catch(console.error);
+
           fetch('/api/mission/log', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
@@ -444,6 +478,17 @@ CRITICAL: If the user requests a new project or a bulk operation, you MUST ident
           };
           setMessages((prev) => [...prev, assistantMessage]);
           
+          fetch('/api/chat/message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+            body: JSON.stringify({
+              view_id: 'chat_main',
+              role: 'assistant',
+              content: data.message.content,
+              thinking: data.message.thinking
+            })
+          }).catch(console.error);
+
           // Log the final response to the mission feed
           fetch('/api/mission/log', {
             method: 'POST',
@@ -567,6 +612,7 @@ Please acknowledge and proceed with the mission.`;
   const clearChat = () => {
     setMessages([]);
     setError(null);
+    fetch('/api/chat/history/chat_main', { method: 'DELETE' }).catch(console.error);
   };
 
   return (

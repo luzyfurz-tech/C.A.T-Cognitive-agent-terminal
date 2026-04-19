@@ -256,6 +256,35 @@ async function startServer() {
     res.json({ status: "Logged" });
   });
 
+  // Chat Persistence Endpoints
+  app.get("/api/chat/history/:viewId", (req, res) => {
+    try {
+      const messages = dbService.getChatMessages(req.params.viewId);
+      res.json({ messages });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/chat/message", (req, res) => {
+    try {
+      const { view_id, role, content, thinking } = req.body;
+      dbService.saveChatMessage(view_id, role, content, thinking);
+      res.json({ status: "Success" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/chat/history/:viewId", (req, res) => {
+    try {
+      dbService.clearChatMessages(req.params.viewId);
+      res.json({ status: "Success" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // File Browser API: List Files
   app.get("/api/files/list", async (req, res) => {
     const dirPath = (req.query.path as string) || process.cwd();

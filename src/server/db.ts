@@ -32,6 +32,15 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    view_id TEXT,
+    role TEXT,
+    content TEXT,
+    thinking TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 export interface AgentLog {
@@ -67,6 +76,19 @@ export const dbService = {
   updateMissionStatus: (mission_id: string, status: string) => {
     const stmt = db.prepare('UPDATE missions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE mission_id = ?');
     return stmt.run(status, mission_id);
+  },
+
+  saveChatMessage: (view_id: string, role: string, content: string, thinking?: string) => {
+    const stmt = db.prepare('INSERT INTO chat_messages (view_id, role, content, thinking) VALUES (?, ?, ?, ?)');
+    return stmt.run(view_id, role, content, thinking || null);
+  },
+
+  getChatMessages: (view_id: string) => {
+    return db.prepare('SELECT role, content, thinking FROM chat_messages WHERE view_id = ? ORDER BY id ASC').all(view_id);
+  },
+
+  clearChatMessages: (view_id: string) => {
+    return db.prepare('DELETE FROM chat_messages WHERE view_id = ?').run(view_id);
   }
 };
 
