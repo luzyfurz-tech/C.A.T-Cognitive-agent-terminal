@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Key, Settings, Loader2, RefreshCw, Trash2, ChevronDown, X, Globe, Shield, Terminal, Play, CheckCircle2, AlertCircle, Layout, Maximize2, Minimize2, Box, Search, Info } from 'lucide-react';
+import { Send, Bot, User, Key, Settings, Loader2, RefreshCw, Trash2, ChevronDown, X, Globe, Shield, Terminal, Play, CheckCircle2, AlertCircle, Layout, Maximize2, Minimize2, Box, Search, Info, Brain, ChevronRight, Zap, FileText } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -13,6 +13,7 @@ import BootSequence from './components/BootSequence';
 import CATLogo from './components/CATLogo';
 import ModelInfoModal from './components/ModelInfoModal';
 import AgentTransfer, { AgentType } from './components/AgentTransfer';
+import AgentTips from './components/AgentTips';
 import modelsInfo from '../models_info.json';
 
 // Utility for tailwind classes
@@ -23,6 +24,7 @@ function cn(...inputs: ClassValue[]) {
 interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  thinking?: string;
   command?: {
     text: string;
     status: 'pending' | 'executing' | 'success' | 'error';
@@ -69,14 +71,73 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [isAgentMode, setIsAgentMode] = useState(true);
+  const [isFullAutonomy, setIsFullAutonomy] = useState(false);
   const [showFileBrowser, setShowFileBrowser] = useState(true);
+  const [pendingTransfer, setPendingTransfer] = useState<{ target: string; content: string } | null>(null);
+  const [transferNotification, setTransferNotification] = useState<{ target: string; show: boolean }>({ target: '', show: false });
   const [currentView, setCurrentView] = useState<'chat' | 'webdesign' | 'docker' | 'ollamaWeb' | 'security'>('chat');
   const [selectedFile, setSelectedFile] = useState<any>(null);
+  const [disabledModels, setDisabledModels] = useState<string[]>(() => {
+    const saved = localStorage.getItem('disabled_models');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('disabled_models', JSON.stringify(disabledModels));
+  }, [disabledModels]);
+
+  const toggleModelStatus = (modelName: string) => {
+    setDisabledModels(prev => 
+      prev.includes(modelName) 
+        ? prev.filter(m => m !== modelName)
+        : [...prev, modelName]
+    );
+  };
   const [analyzeTarget, setAnalyzeTarget] = useState<any>(null);
   const [osInfo, setOsInfo] = useState<string>('Linux');
   const [isBooting, setIsBooting] = useState(true);
   
   const scrollRef = useRef<HTMLDivElement>(null);
+  const triggeredTransfers = useRef<Set<number>>(new Set());
+
+  const ThinkingBlock = ({ thinking }: { thinking: string }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+    
+    return (
+      <div className="mb-4 rounded-xl border border-[#6EC8FF]/10 bg-[#0A0F1A]/40 overflow-hidden shadow-inner">
+        <button 
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[#6EC8FF]/5 transition-colors group"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-[#6EC8FF]/10 rounded-lg group-hover:bg-[#6EC8FF]/20 transition-colors">
+              <Brain className="w-3.5 h-3.5 text-[#6EC8FF]" />
+            </div>
+            <div className="flex flex-col items-start">
+              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-[#6EC8FF]/70">Cognitive Process</span>
+              <span className="text-[8px] font-mono text-text-muted uppercase tracking-widest">Internal Reasoning Log</span>
+            </div>
+          </div>
+          {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-text-muted" /> : <ChevronRight className="w-3.5 h-3.5 text-text-muted" />}
+        </button>
+        
+        <AnimatePresence>
+          {isExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="px-4 pb-4 pt-2 text-[11px] text-text-muted italic leading-relaxed border-t border-[#6EC8FF]/5 font-serif">
+                {thinking}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  };
 
   // Save API key to local storage
   useEffect(() => {
@@ -100,9 +161,17 @@ export default function App() {
     }
   }, [messages]);
 
-  // Auto-execute commands in Agent Mode
   useEffect(() => {
-    const lastMessage = messages[messages.length - 1];
+    if (pendingTransfer && pendingTransfer.target === 'chat' && currentView === 'chat') {
+      sendMessage(pendingTransfer.content);
+      setPendingTransfer(null);
+    }
+  }, [pendingTransfer, currentView]);
+
+  // Auto-execute commands and transfers in Agent Mode
+  useEffect(() => {
+    const lastMessageIndex = messages.length - 1;
+    const lastMessage = messages[lastMessageIndex];
     if (isAgentMode && !isLoading && lastMessage?.role === 'assistant' && !lastMessage.command) {
       // Handle model switching
       const modelToSet = parseModelSwitch(lastMessage.content);
@@ -114,16 +183,21 @@ export default function App() {
             role: 'system', 
             content: `[SYSTEM]: Model switched to ${modelToSet} for ${currentView} view.` 
           }]);
-          return; // Stop here, don't execute commands in the same turn if model switched
+          return;
         }
+      }
+
+      // Handle auto-transfer
+      const transferTarget = parseTransfer(lastMessage.content);
+      if (transferTarget && !triggeredTransfers.current.has(lastMessageIndex)) {
+        triggeredTransfers.current.add(lastMessageIndex);
+        handleTransfer(transferTarget, lastMessage.content);
+        return;
       }
 
       const cmdText = parseCommand(lastMessage.content);
       if (cmdText) {
         // Check for restricted commands according to AGENTS.md
-        // 1. Deleting: rm, rmdir
-        // 2. Installing: install, apt-get, pip, npm
-        // 3. Editing: >, >>, tee, sed, echo (when used to write)
         const isRestricted = 
           /\b(rm|rmdir)\b/.test(cmdText) || 
           /\b(install|apt-get|pip|npm)\b/.test(cmdText) ||
@@ -131,11 +205,11 @@ export default function App() {
           /\b(tee|sed|echo)\b/.test(cmdText);
         
         if (!isRestricted) {
-          executeCommand(messages.length - 1, cmdText);
+          executeCommand(lastMessageIndex, cmdText);
         }
       }
     }
-  }, [messages, isAgentMode, isLoading]);
+  }, [messages, isAgentMode, isLoading, models, currentView]);
 
   useEffect(() => {
     localStorage.setItem('chat_model', viewModels.chat);
@@ -196,8 +270,8 @@ export default function App() {
     
     // Inject file context if a file is selected in the browser
     let contextualMessages = [...messages, userMessage];
-    if (selectedFile && showFileBrowser) {
-      const fileContext = `[CONTEXT: The user has highlighted the file "${selectedFile.name}" at path "${selectedFile.path}" in the file browser. Size: ${selectedFile.size} bytes. Modified: ${selectedFile.modified}]`;
+    if (selectedFile) {
+      const fileContext = `[REFERENCE CONTEXT: The user has highlighted the file "${selectedFile.name}" at path "${selectedFile.path}" in their browser. This is for your situational awareness and reference only. It does NOT necessarily define the project root or target directory for new operations unless explicitly requested.]`;
       contextualMessages = [
         ...messages,
         { role: 'user', content: `${fileContext}\n\n${content}` }
@@ -207,6 +281,19 @@ export default function App() {
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
     setError(null);
+
+    // Log the user's message to the mission feed
+    fetch('/api/mission/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        agent_id: 'user',
+        type: 'directive',
+        event: 'User Directive',
+        content: content,
+        status: 'Success'
+      })
+    }).catch(console.error);
 
     try {
       const response = await fetch('/api/chat', {
@@ -222,8 +309,14 @@ export default function App() {
             ? [
                 { 
                   role: 'system', 
-                  content: `You are a local PC agent (C.A.T). You have high autonomy. 
-If a task requires a shell command, do NOT just suggest it—EXECUTE it directly by wrapping it in [EXECUTE: command]. 
+                  content: `You are the SUPERVISOR (C.A.T. Main Agent). You have high autonomy but a VERY SPECIFIC role.
+
+CRITICAL ROLE CONSTRAINT: 
+You are the SUPERVISOR. You do NOT write code, you do NOT perform security audits, and you do NOT browse the web yourself. 
+Your ONLY job is to understand the user's request, break it down into a plan, and DELEGATE the actual work to the specialist agents using [TRANSFER: agent_id]. 
+If the user asks for a website, you MUST transfer to 'webdesign'. If they ask for a security scan, transfer to 'security'. DO NOT attempt to do their jobs.
+
+If a task requires a quick system check, you can EXECUTE shell commands directly by wrapping them in [EXECUTE: command]. 
 Example: [EXECUTE: ls -la].
 
 MODEL KNOWLEDGE BASE — C.A.T v2.0
@@ -233,7 +326,7 @@ Hver model har en beskrivelse, tags, anbefalet agent‑brug og en capability‑m
 Brug disse data til at forstå modellernes styrker, vælge den bedste model til en opgave og skifte model autonomt via [SET_MODEL: model_name].
 
 MODEL DATABASE:
-${models.map(m => {
+${models.filter(m => !disabledModels.includes(m.name)).map(m => {
   const info = (modelsInfo as any)[m.name];
   if (!info) return `- ${m.name}: Generel AI model`;
   return `- ${m.name}: ${info.description} | Tags: ${info.tags.join(', ')} | Agents: ${info.agents.join(', ')} | Capabilities: ${JSON.stringify(info.capabilities)}`;
@@ -250,25 +343,25 @@ Brug altid modeller med vision når du skal analysere billeder eller websider.
 Brug altid modeller med thinking når opgaven kræver dyb reasoning.
 
 AGENT HANDOFF PROTOCOL:
-Du kan foreslå at overdrage opgaven til en anden specialiseret agent hvis du mener de er bedre egnet.
+Du SKAL overdrage opgaven til en specialiseret agent, så snart planen er lagt.
 Agenter:
-- chat: Generel brainstorm og systemstyring.
-- webdesign: Kodning, UI/UX og frontend udvikling.
+- chat: Dig (Supervisor). Generel brainstorm og systemstyring.
+- webdesign: Kodning, UI/UX og frontend udvikling. BRUG DENNE TIL AL KODNING.
 - security: Sikkerhedsanalyse, penetrationstest og log-audit.
 - ollamaWeb: Web research og interaktion (Søge, Fetch, Screenshot, Click/Type).
 
-For at foreslå en overdragelse, brug: [TRANSFER: agent_id].
-Eksempel: "Jeg har brainstormet færdig. Jeg foreslår vi sender dette til kodning: [TRANSFER: webdesign]"
+For at overdrage, brug: [TRANSFER: agent_id].
+Eksempel: "Jeg har forstået opgaven. Jeg sender dette til kodning: [TRANSFER: webdesign]"
 
 AUTONOMY RULES:
 1. You are authorized to execute most commands (reading files, listing directories, checking system status) autonomously without asking.
-2. EXCEPTIONS: You MUST ask for explicit user confirmation BEFORE:
-   - Deleting any file or directory (e.g., 'rm', 'rmdir').
-   - Installing any new package or dependency (e.g., 'npm install', 'apt-get', 'pip install').
-   - Editing or Writing to files (e.g., 'echo', 'sed', 'tee', 'cat >').
+2. EXCEPTIONS: ${isFullAutonomy ? 'You are in FULL AUTONOMY mode. You are authorized to delegate tasks, switch models, and execute commands (including writing files and installing packages) to complete the mission without further input. Use [DELEGATE: agent_id] to coordinate.' : 'You MUST ask for explicit user confirmation BEFORE: Deleting any file or directory, Installing any new package, or Editing/Writing to files.'}
 
 For all other actions, just do it. If you need to analyze a file, read it first using 'cat' or 'head'.
-HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bash kommandoer). You are aware of the file highlighted in the file browser via [CONTEXT] tags.` 
+HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bash kommandoer). 
+${selectedFile ? `The user has a file highlighted: "${selectedFile.path}". Use this for reference, but ALWAYS confirm the target directory before starting a new project or performing bulk operations. Do NOT assume the highlighted file's directory is the project root. If the user says "start project", ask where.` : 'No file is currently highlighted for reference.'}
+${showFileBrowser ? 'The File Browser is currently visible.' : 'The File Browser is currently MINIMIZED (Minimalisme mode).'}
+CRITICAL: If the user requests a new project or a bulk operation, you MUST identify the target directory. If a file is highlighted in [REFERENCE CONTEXT], do NOT assume its directory is the project root. Always ask for clarification if the target path is ambiguous.` 
                 },
                 ...contextualMessages
               ]
@@ -291,6 +384,7 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
 
         const decoder = new TextDecoder();
         let accumulatedContent = '';
+        let accumulatedThinking = '';
 
         while (true) {
           const { done, value } = await reader.read();
@@ -305,29 +399,63 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
                 const data = JSON.parse(line.slice(6));
                 if (data.message?.content) {
                   accumulatedContent += data.message.content;
-                  setMessages((prev) => {
-                    const updated = [...prev];
-                    updated[updated.length - 1] = {
-                      ...updated[updated.length - 1],
-                      content: accumulatedContent,
-                    };
-                    return updated;
-                  });
                 }
+                if (data.message?.thinking) {
+                  accumulatedThinking += data.message.thinking;
+                }
+                
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = {
+                    ...updated[updated.length - 1],
+                    content: accumulatedContent,
+                    thinking: accumulatedThinking || undefined
+                  };
+                  return updated;
+                });
               } catch (e) {
                 // Ignore parse errors for partial chunks
               }
             }
           }
         }
+        
+        // Log the final response to the mission feed
+        if (accumulatedContent) {
+          fetch('/api/mission/log', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+            body: JSON.stringify({
+              agent_id: 'chat',
+              type: 'response',
+              event: 'Supervisor responded',
+              content: accumulatedContent,
+              status: 'Success'
+            })
+          }).catch(console.error);
+        }
       } else {
         const data = await response.json();
         if (data.message?.content) {
           const assistantMessage: Message = { 
             role: 'assistant', 
-            content: data.message.content 
+            content: data.message.content,
+            thinking: data.message.thinking
           };
           setMessages((prev) => [...prev, assistantMessage]);
+          
+          // Log the final response to the mission feed
+          fetch('/api/mission/log', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+            body: JSON.stringify({
+              agent_id: 'chat',
+              type: 'response',
+              event: 'Supervisor responded',
+              content: data.message.content,
+              status: 'Success'
+            })
+          }).catch(console.error);
         }
       }
     } catch (err: any) {
@@ -410,7 +538,24 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
     return match ? match[1] as AgentType : null;
   };
 
-  const handleTransfer = (target: AgentType) => {
+  const buildTaskContext = (target: string, content?: string) => {
+    if (!content) return "";
+    return `TASK BRIEF FOR ${target.toUpperCase()}:
+The Supervisor has delegated this task to you.
+CONTEXT / INSTRUCTIONS:
+${content}
+
+Please acknowledge and proceed with the mission.`;
+  };
+
+  const handleTransfer = (target: AgentType, content?: string) => {
+    const taskBrief = buildTaskContext(target, content);
+    setPendingTransfer({ target, content: taskBrief });
+    
+    // Show notification
+    setTransferNotification({ target, show: true });
+    setTimeout(() => setTransferNotification(prev => ({ ...prev, show: false })), 3000);
+
     setCurrentView(target);
   };
 
@@ -427,6 +572,27 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
   return (
     <>
       {isBooting && <BootSequence onComplete={() => setIsBooting(false)} />}
+      
+      {/* Transfer Notification Banner */}
+      <AnimatePresence>
+        {transferNotification.show && (
+          <motion.div
+            initial={{ y: -100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -100, opacity: 0 }}
+            className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 bg-brand text-[#0A0F1A] rounded-2xl shadow-2xl flex items-center gap-3 border border-white/20"
+          >
+            <div className="p-2 bg-white/20 rounded-xl animate-pulse">
+              <Zap className="w-4 h-4" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-70">Agent Handoff</span>
+              <span className="text-xs font-bold uppercase tracking-wider">Transferring to {transferNotification.target}...</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className={cn("h-screen bg-bg-light text-text-main font-sans flex flex-col selection:bg-brand/30 overflow-hidden modern-grid", isBooting && "opacity-0")}>
         {/* Header / Config Bar */}
       <header className="flex-none border-b border-border py-4 px-8 bg-surface/80 backdrop-blur-md sticky top-0 z-20 shadow-sm">
@@ -517,6 +683,49 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
               </button>
             </div>
 
+            {/* Full Autonomy Toggle */}
+            <div className={cn(
+              "flex items-center gap-2 px-3 py-2 border rounded-lg transition-all",
+              isFullAutonomy ? "bg-brand/10 border-brand/50 shadow-[0_0_10px_rgba(255,122,47,0.2)]" : "bg-bg-light border-border"
+            )}>
+              <Zap className={cn("w-3 h-3", isFullAutonomy ? "text-brand" : "text-text-muted")} />
+              <span className={cn("text-[10px] font-mono uppercase tracking-wider", isFullAutonomy ? "text-brand" : "text-text-muted")}>Autonomy</span>
+              <button
+                onClick={() => setIsFullAutonomy(!isFullAutonomy)}
+                className={cn(
+                  "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none",
+                  isFullAutonomy ? "bg-brand" : "bg-border"
+                )}
+              >
+                <span
+                  className={cn(
+                    "inline-block h-3 w-3 transform rounded-full bg-surface transition-transform",
+                    isFullAutonomy ? "translate-x-5" : "translate-x-1"
+                  )}
+                />
+              </button>
+            </div>
+
+            {/* Selected Context Indicator */}
+            {selectedFile && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-brand/10 border border-brand/30 rounded-lg animate-in fade-in slide-in-from-right-4">
+                <FileText className="w-3.5 h-3.5 text-brand" />
+                <div className="flex flex-col">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-brand/70">Ref Context</span>
+                  <span className="text-[10px] font-mono text-text-main truncate max-w-[120px]">
+                    {selectedFile.name}
+                  </span>
+                </div>
+                <button 
+                  onClick={() => setSelectedFile(null)}
+                  className="ml-1 p-1 hover:bg-brand/20 rounded-md transition-colors text-brand"
+                  title="Clear Reference Context"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+
             {/* File Browser Toggle */}
             <button
               onClick={() => setShowFileBrowser(!showFileBrowser)}
@@ -566,10 +775,13 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
             ollamaHost={ollamaHost} 
             selectedModel={viewModels.webdesign}
             models={models}
+            disabledModels={disabledModels}
             onModelChange={(model) => setViewModels(prev => ({ ...prev, webdesign: model }))}
             isAgentMode={isAgentMode}
             modelsInfo={modelsInfo}
             onTransfer={handleTransfer}
+            pendingTransfer={pendingTransfer}
+            onContextUsed={() => setPendingTransfer(null)}
           />
         </div>
 
@@ -584,11 +796,15 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
             apiKey={apiKey} 
             selectedModel={viewModels.security} 
             models={models} 
+            disabledModels={disabledModels}
             onModelChange={(model) => setViewModels(prev => ({ ...prev, security: model }))} 
             analyzeTarget={analyzeTarget}
             isAgentMode={isAgentMode}
             modelsInfo={modelsInfo}
             onTransfer={handleTransfer}
+            pendingTransfer={pendingTransfer}
+            onContextUsed={() => setPendingTransfer(null)}
+            onGlobalMessage={sendMessage}
           />
         </div>
 
@@ -598,10 +814,13 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
             apiKey={apiKey} 
             selectedModel={viewModels.ollamaWeb}
             models={models}
+            disabledModels={disabledModels}
             onModelChange={(model) => setViewModels(prev => ({ ...prev, ollamaWeb: model }))}
             isAgentMode={isAgentMode}
             modelsInfo={modelsInfo}
             onTransfer={handleTransfer}
+            pendingTransfer={pendingTransfer}
+            onContextUsed={() => setPendingTransfer(null)}
           />
         </div>
 
@@ -677,6 +896,7 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
                   <p className="text-[10px] font-mono text-[#4FE3D4] tracking-[0.4em] uppercase font-bold">Encryption active • System ready</p>
                   <div className="h-[1px] w-8 bg-[#4FE3D4]/30" />
                 </div>
+                <AgentTips agentType="chat" />
               </div>
             </div>
           )}
@@ -712,6 +932,9 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
                 <div className="text-[10px] font-mono uppercase text-text-muted mb-2 tracking-[0.2em] font-bold">
                   {msg.role === 'user' ? 'Operator' : 'AI Core'}
                 </div>
+                
+                {msg.thinking && <ThinkingBlock thinking={msg.thinking} />}
+                
                 <div className={cn(
                   "text-[15px] leading-relaxed prose prose-invert max-w-none text-text-main",
                   "prose-pre:bg-[#0A0F1A] prose-pre:text-[#A8B2C0] prose-code:text-[#6EC8FF] prose-code:bg-[#6EC8FF]/5 prose-code:px-1 prose-code:rounded"
@@ -724,6 +947,7 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
                     currentAgent="chat" 
                     onTransfer={handleTransfer}
                     suggestedAgent={parseTransfer(msg.content)}
+                    content={msg.content}
                   />
                 )}
 
@@ -977,6 +1201,8 @@ HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bas
         onClose={() => setIsModelInfoOpen(false)} 
         modelsInfo={modelsInfo as any}
         availableModels={models.map(m => m.name)}
+        disabledModels={disabledModels}
+        onToggleModel={toggleModelStatus}
       />
     </div>
   </>

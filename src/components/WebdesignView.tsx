@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Code, Eye, Play, Loader2, Terminal, CheckCircle2, AlertCircle, RefreshCw, Globe, Search, Layout, Maximize2, Minimize2, Trash2, ChevronDown, Box, Settings2, Plus, Edit3, Shield, Info } from 'lucide-react';
+import { Send, Bot, User, Code, Eye, Play, Loader2, Terminal, CheckCircle2, AlertCircle, RefreshCw, Globe, Search, Layout, Maximize2, Minimize2, Trash2, ChevronDown, Box, Settings2, Plus, Edit3, Shield, Info, Brain, ChevronRight } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import MasterPromptModal from './MasterPromptModal';
 import ProjectModal from './ProjectModal';
 import AgentTransfer, { AgentType } from './AgentTransfer';
+import AgentTips from './AgentTips';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -17,6 +18,7 @@ function cn(...inputs: ClassValue[]) {
 interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  thinking?: string;
   command?: {
     text: string;
     status: 'pending' | 'executing' | 'success' | 'error';
@@ -37,17 +39,82 @@ interface WebdesignViewProps {
   ollamaHost: string;
   selectedModel: string;
   models: any[];
+  disabledModels: string[];
   onModelChange: (model: string) => void;
   isAgentMode: boolean;
   modelsInfo: any;
-  onTransfer: (target: AgentType) => void;
+  onTransfer: (target: AgentType, content?: string) => void;
+  pendingTransfer?: { target: string; content: string } | null;
+  onContextUsed?: () => void;
 }
 
-export default function WebdesignView({ apiKey, ollamaHost, selectedModel, models, onModelChange, isAgentMode, modelsInfo, onTransfer }: WebdesignViewProps) {
+export default function WebdesignView({ 
+  apiKey, 
+  ollamaHost, 
+  selectedModel, 
+  models, 
+  disabledModels,
+  onModelChange, 
+  isAgentMode, 
+  modelsInfo, 
+  onTransfer,
+  pendingTransfer,
+  onContextUsed
+}: WebdesignViewProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'code' | 'preview'>('code');
+  const processedTransferRef = useRef<string | null>(null);
+
+  const ThinkingBlock = ({ thinking }: { thinking: string }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+    
+    return (
+      <div className="mb-4 rounded-xl border border-brand/10 bg-bg-dark/40 overflow-hidden shadow-inner">
+        <button 
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-brand/5 transition-colors group"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-brand/10 rounded-lg group-hover:bg-brand/20 transition-colors">
+              <Brain className="w-3.5 h-3.5 text-brand" />
+            </div>
+            <div className="flex flex-col items-start">
+              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-brand/70">Cognitive Process</span>
+              <span className="text-[8px] font-mono text-text-muted uppercase tracking-widest">Internal Reasoning Log</span>
+            </div>
+          </div>
+          {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-text-muted" /> : <ChevronRight className="w-3.5 h-3.5 text-text-muted" />}
+        </button>
+        
+        <AnimatePresence>
+          {isExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="px-4 pb-4 pt-2 text-[11px] text-text-muted italic leading-relaxed border-t border-brand/5 font-serif">
+                {thinking}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  };
+
+  useEffect(() => {
+    if (pendingTransfer && pendingTransfer.target === 'webdesign' && onContextUsed) {
+      if (processedTransferRef.current !== pendingTransfer.content) {
+        processedTransferRef.current = pendingTransfer.content;
+        sendMessage(pendingTransfer.content);
+        onContextUsed();
+      }
+    }
+  }, [pendingTransfer]);
   const [currentCode, setCurrentCode] = useState<string>('// No code generated yet');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewKey, setPreviewKey] = useState(0);
@@ -149,7 +216,7 @@ export default function WebdesignView({ apiKey, ollamaHost, selectedModel, model
   const DEFAULT_SYSTEM_PROMPT = `DINE EVNER & VÆRKTØJER:
 1. LOKAL EKSEKVERING: Du kan køre shell-kommandoer direkte på brugerens pc.
    - HOST OS: ${osInfo} (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bash kommandoer som 'ls', 'mkdir -p', 'rm -rf', 'cp', 'mv' osv.).
-2. BROWSER (PLAYWRIGHT): Du kan researche design-trends og teknisk dokumentation via OpenClaw/Playwright.
+2. BROWSER (PLAYWRIGHT): Du kan researche design-trends og teknisk dokumentation via OllamaWeb.
 3. DOCKER: Du kan generere Dockerfiles og køre containere lokalt.
 4. LIVE PREVIEW: Du kan se statiske filer direkte via /preview/PROJECT_NAME/index.html uden Docker.
 
@@ -219,13 +286,11 @@ Brug altid modeller med tools når du skal bruge terminal, filsystem eller brows
 Brug altid modeller med vision når du skal analysere billeder eller websider.
 Brug altid modeller med thinking når opgaven kræver dyb reasoning.
 
-AGENT HANDOFF PROTOCOL:
-Du kan foreslå at overdrage opgaven til en anden specialiseret agent hvis du mener de er bedre egnet.
-Agenter:
+AGENTS:
 - chat: Generel brainstorm og systemstyring.
 - webdesign: Kodning, UI/UX og frontend udvikling.
 - security: Sikkerhedsanalyse, penetrationstest og log-audit.
-- openclaw: Browser-baseret research og automation.
+- ollamaWeb: Web research og interaktion (Søge, Fetch, Screenshot, Click/Type).
 
 For at foreslå en overdragelse, brug: [TRANSFER: agent_id].
 Eksempel: "Jeg er færdig med kodningen. Jeg foreslår vi sender dette til sikkerhedstjek: [TRANSFER: security]"
@@ -281,7 +346,16 @@ NAVIGATION & LINKS:
         
         if (!isRestricted) {
           executeCommand(messages.length - 1, cmdText);
+          return;
         }
+      }
+
+      // Handle auto-transfer
+      const transferMatch = lastMessage.content.match(/\[TRANSFER:\s*(.*?)\]/);
+      if (transferMatch) {
+        const target = transferMatch[1].trim();
+        onTransfer(target as any, lastMessage.content);
+        return;
       }
     }
   }, [messages, isAgentMode, isLoading]);
@@ -542,24 +616,30 @@ NAVIGATION & LINKS:
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || !selectedModel || !apiKey || isLoading) return;
+  const sendMessage = async (customInput?: string) => {
+    const finalInput = customInput || input;
+    if (!finalInput.trim() || !selectedModel || !apiKey || isLoading) return;
 
-    const userMessage: Message = { role: 'user', content: input };
+    const userMessage: Message = { role: 'user', content: finalInput };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
-    setInput('');
+    if (!customInput) setInput('');
     setIsLoading(true);
 
     // Log start event
-    fetch('/api/logs/event', {
+    fetch('/api/mission/log', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`
       },
-      body: JSON.stringify({ event: "Coding agent initialised coding", status: "Start", details: `Model: ${selectedModel}` })
+      body: JSON.stringify({ 
+        agent_id: 'webdesign',
+        type: 'directive',
+        event: 'Coding agent initialised coding', 
+        content: `Model: ${selectedModel}\nUser Input: ${finalInput}`,
+        status: 'Start'
+      })
     }).catch(console.error);
 
     try {
@@ -583,7 +663,11 @@ NAVIGATION & LINKS:
       if (!response.ok) throw new Error('Failed to get response');
       const data = await response.json();
       
-      const assistantMessage: Message = { role: 'assistant', content: data.message.content };
+      const assistantMessage: Message = { 
+        role: 'assistant', 
+        content: data.message.content,
+        thinking: data.message.thinking
+      };
       
       // Extract code if present (prefer html for preview, otherwise last block)
       const htmlMatch = data.message.content.match(/```html\n([\s\S]*?)```/);
@@ -604,28 +688,45 @@ NAVIGATION & LINKS:
       setMessages(prev => [...prev, assistantMessage]);
       
       // Log finish event
-      fetch('/api/logs/event', {
+      fetch('/api/mission/log', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`
         },
-        body: JSON.stringify({ event: "Coding agent finished coding", status: "Success" })
+        body: JSON.stringify({ 
+          agent_id: 'webdesign',
+          type: 'response',
+          event: 'Coding agent finished coding', 
+          content: data.message.content,
+          status: 'Success' 
+        })
       }).catch(console.error);
     } catch (err: any) {
       console.error(err);
       // Log error event
-      fetch('/api/logs/event', {
+      fetch('/api/mission/log', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`
         },
-        body: JSON.stringify({ event: "Coding agent failed", status: "Error", details: err.message })
+        body: JSON.stringify({ 
+          agent_id: 'webdesign',
+          type: 'error',
+          event: 'Coding agent failed', 
+          content: err.message,
+          status: 'Error' 
+        })
       }).catch(console.error);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await sendMessage();
   };
 
   return (
@@ -663,11 +764,13 @@ NAVIGATION & LINKS:
               {models.length === 0 ? (
                 <option>No models found</option>
               ) : (
-                models.map((m, idx) => (
-                  <option key={`${m.name}-${m.digest}-${idx}`} value={m.name}>
-                    {m.name}
-                  </option>
-                ))
+                models
+                  .filter(m => !disabledModels.includes(m.name) || m.name === selectedModel)
+                  .map((m, idx) => (
+                    <option key={`${m.name}-${m.digest}-${idx}`} value={m.name}>
+                      {m.name} {disabledModels.includes(m.name) ? '(Deactivated)' : ''}
+                    </option>
+                  ))
               )}
             </select>
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none text-text-muted" />
@@ -745,6 +848,7 @@ NAVIGATION & LINKS:
                 <p className="font-serif italic text-2xl text-text-main">Awaiting Design Brief</p>
                 <p className="text-xs text-text-muted font-mono uppercase tracking-widest">System ready for creative input</p>
               </div>
+              <AgentTips agentType="webdesign" />
             </div>
           )}
 
@@ -760,6 +864,8 @@ NAVIGATION & LINKS:
                 {msg.role === 'user' ? <User className="w-3 h-3" /> : <Terminal className="w-3 h-3" />}
                 {msg.role === 'user' ? 'Operator' : 'Designer'}
               </div>
+              
+              {msg.thinking && <ThinkingBlock thinking={msg.thinking} />}
               <div className="prose prose-sm prose-invert max-w-none text-text-main">
                 <ReactMarkdown>{msg.content}</ReactMarkdown>
               </div>
@@ -769,6 +875,7 @@ NAVIGATION & LINKS:
                   currentAgent="webdesign" 
                   onTransfer={onTransfer}
                   suggestedAgent={parseTransfer(msg.content)}
+                  content={msg.content}
                 />
               )}
 

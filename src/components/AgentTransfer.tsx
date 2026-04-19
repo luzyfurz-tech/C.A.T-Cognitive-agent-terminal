@@ -1,5 +1,5 @@
-import React from 'react';
-import { Share2, Code, Shield, Globe, Bot, ArrowRight } from 'lucide-react';
+import React, { useState } from 'react';
+import { Share2, Code, Shield, Globe, Bot, ArrowRight, Copy, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -12,8 +12,9 @@ export type AgentType = 'chat' | 'webdesign' | 'security' | 'ollamaWeb';
 
 interface AgentTransferProps {
   currentAgent: AgentType;
-  onTransfer: (targetAgent: AgentType) => void;
+  onTransfer: (targetAgent: AgentType, content?: string) => void;
   suggestedAgent?: AgentType | null;
+  content?: string;
 }
 
 const AGENTS: { id: AgentType; label: string; icon: any; color: string }[] = [
@@ -23,12 +24,33 @@ const AGENTS: { id: AgentType; label: string; icon: any; color: string }[] = [
   { id: 'ollamaWeb', label: 'OllamaWeb', icon: Globe, color: 'text-brand' },
 ];
 
-export default function AgentTransfer({ currentAgent, onTransfer, suggestedAgent }: AgentTransferProps) {
+export default function AgentTransfer({ currentAgent, onTransfer, suggestedAgent, content }: AgentTransferProps) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (!content) return;
+    navigator.clipboard.writeText(content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div className="mt-4 pt-4 border-t border-border/30">
-      <div className="flex items-center gap-2 mb-3">
-        <Share2 className="w-3 h-3 text-brand/50" />
-        <span className="text-[10px] font-mono text-text-muted uppercase tracking-widest font-bold">Protocol Handoff</span>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Share2 className="w-3 h-3 text-brand/50" />
+          <span className="text-[10px] font-mono text-text-muted uppercase tracking-widest font-bold">Protocol Handoff</span>
+        </div>
+        
+        {content && (
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-bg-light/50 border border-border hover:border-brand/30 hover:text-brand transition-all group"
+          >
+            {copied ? <Check className="w-3 h-3 text-brand" /> : <Copy className="w-3 h-3 text-text-muted group-hover:text-brand" />}
+            <span className="text-[9px] font-black uppercase tracking-tight">{copied ? 'Copied' : 'Copy Output'}</span>
+          </button>
+        )}
       </div>
       
       <div className="flex flex-wrap gap-2">
@@ -40,7 +62,7 @@ export default function AgentTransfer({ currentAgent, onTransfer, suggestedAgent
               key={agent.id}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => onTransfer(agent.id)}
+              onClick={() => onTransfer(agent.id, content)}
               className={cn(
                 "flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all duration-300",
                 isSuggested 

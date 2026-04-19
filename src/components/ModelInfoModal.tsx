@@ -27,9 +27,18 @@ interface ModelInfoModalProps {
   onClose: () => void;
   modelsInfo: Record<string, ModelData>;
   availableModels: string[];
+  disabledModels: string[];
+  onToggleModel: (name: string) => void;
 }
 
-export default function ModelInfoModal({ isOpen, onClose, modelsInfo, availableModels }: ModelInfoModalProps) {
+export default function ModelInfoModal({ 
+  isOpen, 
+  onClose, 
+  modelsInfo, 
+  availableModels,
+  disabledModels,
+  onToggleModel
+}: ModelInfoModalProps) {
   if (!isOpen) return null;
 
   const CapabilityBar = ({ label, value, icon: Icon }: { label: string, value: number, icon: any }) => (
@@ -90,18 +99,20 @@ export default function ModelInfoModal({ isOpen, onClose, modelsInfo, availableM
           <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {Object.entries(modelsInfo).map(([name, data]) => {
-                const isAvailable = availableModels.includes(name);
+                const isInstalled = availableModels.includes(name);
+                const isDisabled = disabledModels.includes(name);
+                const isActive = isInstalled && !isDisabled;
                 
                 return (
                   <div 
                     key={name}
                     className={cn(
                       "p-4 rounded-xl border transition-all duration-300 group bg-bg-light/30 border-border hover:border-brand/50 hover:bg-bg-light/50",
-                      !isAvailable && "opacity-80"
+                      (!isInstalled || isDisabled) && "opacity-80 grayscale-[0.5]"
                     )}
                   >
                     <div className="flex items-start justify-between mb-3">
-                      <div>
+                      <div className="flex-1">
                         <h3 className="font-black text-sm uppercase tracking-tight text-text-main group-hover:text-brand transition-colors">
                           {name}
                         </h3>
@@ -113,11 +124,27 @@ export default function ModelInfoModal({ isOpen, onClose, modelsInfo, availableM
                           ))}
                         </div>
                       </div>
-                      <div className={cn(
-                        "px-2 py-1 rounded text-[8px] font-black uppercase tracking-wider",
-                        isAvailable ? "bg-brand/10 text-brand" : "bg-text-muted/10 text-text-muted"
-                      )}>
-                        {isAvailable ? 'Active' : 'Standby'}
+                      <div className="flex flex-col items-end gap-2">
+                        <div className={cn(
+                          "px-2 py-1 rounded text-[8px] font-black uppercase tracking-wider",
+                          isInstalled ? "bg-brand/10 text-brand" : "bg-text-muted/10 text-text-muted"
+                        )}>
+                          {isInstalled ? 'Installed' : 'Cloud'}
+                        </div>
+                        
+                        {isInstalled && (
+                          <button
+                            onClick={() => onToggleModel(name)}
+                            className={cn(
+                              "px-2 py-1 rounded text-[8px] font-black uppercase tracking-wider transition-all active:scale-95",
+                              isDisabled 
+                                ? "bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20" 
+                                : "bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500/20"
+                            )}
+                          >
+                            {isDisabled ? 'Deactivated' : 'Active'}
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -166,7 +193,7 @@ export default function ModelInfoModal({ isOpen, onClose, modelsInfo, availableM
               </div>
             </div>
             <div>
-              Total Models: {Object.keys(modelsInfo).length} | Active: {availableModels.length}
+              Total Models: {Object.keys(modelsInfo).length} | Active: {availableModels.filter(m => !disabledModels.includes(m)).length}
             </div>
           </div>
         </motion.div>

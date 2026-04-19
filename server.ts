@@ -15,6 +15,8 @@ import stealth from "puppeteer-extra-plugin-stealth";
 chromium.use(stealth());
 
 import os from "os";
+import { dbService } from "./src/server/db";
+import { missionService } from "./src/server/mission";
 
 const execAsync = promisify(exec);
 
@@ -62,7 +64,7 @@ if (!existsSync(AUDIT_LOG_PATH)) {
   }
 }
 
-async function logAudit(command: string, status: string, stdout: string = "", stderr: string = "", type: string = "command") {
+async function logAudit(command: string, status: string, stdout: string = "", stderr: string = "", type: string = "command", agentId: string = "system") {
   const entry = {
     timestamp: new Date().toISOString(),
     type,
@@ -76,6 +78,15 @@ async function logAudit(command: string, status: string, stdout: string = "", st
   
   try {
     await fs.writeFile(AUDIT_LOG_PATH, JSON.stringify(auditLogs, null, 2));
+    // Also log to SQLite
+    dbService.log({
+      agent_id: agentId,
+      type,
+      event: command,
+      content: stdout || stderr || "",
+      status,
+      metadata: JSON.stringify({ stderr: stderr.substring(0, 200) })
+    });
   } catch (e) {
     console.error("Failed to write audit log:", e);
   }
@@ -113,6 +124,44 @@ async function startServer() {
   const PORT = parseInt(process.env.PORT || "3000", 10);
 
   app.use(express.json());
+
+  // Mission State Endpoints
+  app.get("/api/mission/state", async (req, res) => {
+    try {
+      const state = await missionService.getState();
+      res.json(state);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/mission/state", async (req, res) => {
+    try {
+      const state = await missionService.updateState(req.body);
+      res.json(state);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/mission/history", async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const logs = dbService.getLogs(limit);
+      res.json({ logs });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/mission/log", async (req, res) => {
+    try {
+      const result = dbService.log(req.body);
+      res.json({ status: "Logged", result });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   // Health Check
   app.get("/api/health", (req, res) => {

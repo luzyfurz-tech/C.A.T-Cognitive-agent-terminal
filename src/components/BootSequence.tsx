@@ -1,22 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import CATLogo from './CATLogo';
-
-const BOOT_MESSAGES = [
-  "INITIALIZING D.E.X C.A.T PROTOCOL...",
-  "ESTABLISHING SECURE LINK...",
-  "ENCRYPTION ACTIVE • CHANNEL SEALED",
-  "LOADING NODE REGISTRY...",
-  "SCANNING PRINTER NODES [ OK ]",
-  "AUTHENTICATING RINKHALS NODES...",
-  "BOOTSTRAPPING FARM COMMANDER...",
-  "LOADING C.A.T INTERFACE MODULES...",
-  "SYSTEM READY"
-];
+import { motion } from 'motion/react';
 
 export default function BootSequence({ onComplete }: { onComplete: () => void }) {
-  const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
-  const [isFadingOut, setIsFadingOut] = useState(false);
+  const [progress, setProgress] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -53,25 +39,27 @@ export default function BootSequence({ onComplete }: { onComplete: () => void })
 
     const interval = setInterval(draw, 33);
 
-    // Text Sequence Logic
-    const messageInterval = setInterval(() => {
-      setCurrentMessageIndex((prev) => {
-        if (prev < BOOT_MESSAGES.length - 1) return prev + 1;
-        clearInterval(messageInterval);
-        setTimeout(() => setIsFadingOut(true), 1000);
-        return prev;
-      });
-    }, 800);
-
-    // Completion
-    setTimeout(() => {
-      clearInterval(interval);
-      onComplete();
-    }, BOOT_MESSAGES.length * 800 + 6000);
+    // Progress Logic
+    const duration = 5000; // 5 seconds boot
+    const startTime = Date.now();
+    
+    const progressInterval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const newProgress = Math.min((elapsed / duration) * 100, 100);
+      setProgress(newProgress);
+      
+      if (newProgress >= 100) {
+        clearInterval(progressInterval);
+        setTimeout(() => {
+          clearInterval(interval);
+          onComplete();
+        }, 1000);
+      }
+    }, 50);
 
     return () => {
       clearInterval(interval);
-      clearInterval(messageInterval);
+      clearInterval(progressInterval);
     };
   }, [onComplete]);
 
@@ -79,34 +67,36 @@ export default function BootSequence({ onComplete }: { onComplete: () => void })
     <div className="fixed inset-0 z-[1000] bg-[#0A0F1A] flex items-center justify-center overflow-hidden">
       <canvas ref={canvasRef} className="absolute inset-0 opacity-50" />
       
-      <div className="relative z-10 text-center">
-        <AnimatePresence mode="wait">
-          {!isFadingOut ? (
-            <motion.div
-              key={currentMessageIndex}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="text-[#00BFFF] font-mono text-xl tracking-widest drop-shadow-[0_0_8px_rgba(0,191,255,0.8)]"
-            >
-              {BOOT_MESSAGES[currentMessageIndex]}
-            </motion.div>
-          ) : (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="space-y-4 flex flex-col items-center"
-            >
-              <CATLogo />
-              <div className="text-6xl font-serif italic font-black text-[#00BFFF] drop-shadow-[0_0_15px_rgba(0,191,255,0.8)]">
-                C.A.T
-              </div>
-              <div className="text-sm font-mono text-[#00BFFF] tracking-[0.5em] uppercase">
-                Cognitive Agent Terminal
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+      <div className="relative z-10 text-center space-y-12">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 1.5 }}
+          className="space-y-4 flex flex-col items-center"
+        >
+          <div className="text-8xl font-serif italic font-black text-[#00BFFF] drop-shadow-[0_0_20px_rgba(0,191,255,0.8)]">
+            C.A.T
+          </div>
+          <div className="text-sm font-mono text-[#00BFFF] tracking-[0.5em] uppercase opacity-80">
+            Cognitive Agent Terminal
+          </div>
+        </motion.div>
+
+        <div className="space-y-4">
+          {/* Loading Bar Container */}
+          <div className="w-72 h-1 bg-white/5 rounded-full overflow-hidden mx-auto relative border border-white/5">
+            <motion.div 
+              className="absolute inset-y-0 left-0 bg-[#00BFFF] shadow-[0_0_15px_#00BFFF]"
+              initial={{ width: 0 }}
+              animate={{ width: `${progress}%` }}
+              transition={{ ease: "linear" }}
+            />
+          </div>
+          
+          <div className="text-[10px] font-mono text-[#00BFFF]/40 uppercase tracking-[0.3em] animate-pulse">
+            System Initializing... {Math.round(progress)}%
+          </div>
+        </div>
       </div>
     </div>
   );
