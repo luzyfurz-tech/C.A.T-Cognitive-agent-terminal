@@ -47,6 +47,7 @@ export default function OllamaWebView({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [agentStatus, setAgentStatus] = useState<string | null>(null);
+  const [lastUrl, setLastUrl] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [isModelInfoOpen, setIsModelInfoOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -268,7 +269,9 @@ The system automatically detects screenshot paths (e.g., /preview/web-snap-xxx.p
       body: JSON.stringify({ url, screenshot })
     });
     if (!response.ok) throw new Error('Fetch failed');
-    return await response.json();
+    const data = await response.json();
+    if (data.currentUrl) setLastUrl(data.currentUrl);
+    return data;
   };
 
   const handleAction = async (action: string, params: any) => {
@@ -278,10 +281,12 @@ The system automatically detects screenshot paths (e.g., /preview/web-snap-xxx.p
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
-      body: JSON.stringify({ ...params, action })
+      body: JSON.stringify({ ...params, action, url: lastUrl })
     });
     if (!response.ok) throw new Error('Action failed');
-    return await response.json();
+    const data = await response.json();
+    if (data.currentUrl) setLastUrl(data.currentUrl);
+    return data;
   };
 
   const sendMessage = async (content: string) => {
@@ -385,6 +390,7 @@ The system automatically detects screenshot paths (e.g., /preview/web-snap-xxx.p
         const url = fetchMatch[1].trim();
         const needsScreenshot = fetchMatch[2]?.trim() === 'screenshot';
         setAgentStatus(needsScreenshot ? `Capturing screenshot of ${url}` : `Fetching content from ${url}`);
+        setLastUrl(url);
         const result = await handleFetch(url, needsScreenshot);
         const toolContent = `[TOOL_RESULT: web_fetch]\n${JSON.stringify(result, null, 2)}`;
         const assistantTurn: Message = { role: 'assistant', content: assistantMsg };

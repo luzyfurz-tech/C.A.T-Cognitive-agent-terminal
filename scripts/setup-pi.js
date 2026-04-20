@@ -14,7 +14,7 @@ async function setup() {
   console.log('\n--- Cognitive Agent Terminal (C.A.T) Setup ---\n');
 
   // 1. Ask for Port
-  const port = await question('Hvilken port skal C.A.T køre på? (Standard: 3000): ') || '3000';
+  const port = await question('Hvilken port skal C.A.T køre på? (Standard: 3939): ') || '3939';
   
   // 2. Create/Update .env
   const envPath = path.join(process.cwd(), '.env');

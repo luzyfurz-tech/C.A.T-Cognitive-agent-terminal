@@ -258,11 +258,19 @@ VIGTIGT: NÅR DU ER HELT FÆRDIG MED DIN SIKKERHEDS-OPGAVE, SKAL DU RAPPORTERE T
       
       setMessages(prev => {
         const updated = [...prev];
-        updated[msgIdx].command = {
-          text: command,
-          status: response.ok ? 'success' : 'error',
-          output: data.output || data.error
-        };
+        if (response.ok) {
+          updated[msgIdx].command = {
+            text: command,
+            status: 'success',
+            output: data.stdout || 'Command executed successfully (no output).'
+          };
+        } else {
+          updated[msgIdx].command = {
+            text: command,
+            status: 'error',
+            output: data.error || data.stderr || 'Execution failed.'
+          };
+        }
         return updated;
       });
     } catch (err: any) {
@@ -287,17 +295,8 @@ VIGTIGT: NÅR DU ER HELT FÆRDIG MED DIN SIKKERHEDS-OPGAVE, SKAL DU RAPPORTERE T
       if (!lastMessage.command) {
         const cmdText = parseCommand(lastMessage.content);
         if (cmdText) {
-          // Check for restricted commands according to AGENTS.md
-          const isRestricted = 
-            /\\b(rm|rmdir)\\b/.test(cmdText) || 
-            /\\b(install|apt-get|pip|npm)\\b/.test(cmdText) ||
-            /[>|]/.test(cmdText) || 
-            /\\b(tee|sed|echo)\\b/.test(cmdText);
-          
-          if (!isRestricted) {
-            executeCommand(messages.length - 1, cmdText);
-            return;
-          }
+          executeCommand(messages.length - 1, cmdText);
+          return;
         }
 
         // Handle auto-transfer
@@ -308,6 +307,16 @@ VIGTIGT: NÅR DU ER HELT FÆRDIG MED DIN SIKKERHEDS-OPGAVE, SKAL DU RAPPORTERE T
           return;
         }
       } else if (lastMessage.command.status === 'success' || lastMessage.command.status === 'error') {
+        if (lastMessage.command.status === 'success') {
+          // If the message also contained a transfer, execute it now instead of replying
+          const transferMatch = lastMessage.content.match(/\[TRANSFER:\s*(.*?)\]/);
+          if (transferMatch) {
+            const target = transferMatch[1].trim();
+            onTransfer(target as any, lastMessage.content);
+            return;
+          }
+        }
+
         const cmdStatusMsg = lastMessage.command.status === 'error'
           ? "[SYSTEM AUTO-REPLY] Command FAILED! Check the output for errors and adjust your security analysis immediately."
           : "[SYSTEM AUTO-REPLY] Command execution finished. What is your next step? If the analysis is completely done, use [TRANSFER: chat] to report back, or transfer directly to [TRANSFER: webdesign] if you need them to fix the code.";

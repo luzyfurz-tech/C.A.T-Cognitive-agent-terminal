@@ -8,7 +8,7 @@ User=pi
 WorkingDirectory=/home/pi/cat
 ExecStart=/usr/bin/npm start
 Restart=on-failure
-Environment=NODE_ENV=production PORT=3000
+Environment=NODE_ENV=production PORT=3939
 
 [Install]
 WantedBy=multi-user.target

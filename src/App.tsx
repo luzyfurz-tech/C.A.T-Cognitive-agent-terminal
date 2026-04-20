@@ -95,6 +95,7 @@ export default function App() {
   };
   const [analyzeTarget, setAnalyzeTarget] = useState<any>(null);
   const [osInfo, setOsInfo] = useState<string>('Linux');
+  const [currentCwd, setCurrentCwd] = useState<string>('');
   const [isBooting, setIsBooting] = useState(true);
   
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -156,6 +157,18 @@ export default function App() {
 
   // Load chat history on mount
   useEffect(() => {
+    const fetchHealth = async () => {
+      try {
+        const response = await fetch('/api/health');
+        const data = await response.json();
+        setOsInfo(data.os);
+        if (data.cwd) setCurrentCwd(data.cwd);
+      } catch (err) {
+        console.error("Failed to fetch health:", err);
+      }
+    };
+    fetchHealth();
+
     fetch(`/api/chat/history/chat_main`)
       .then(res => res.json())
       .then(data => {
@@ -209,21 +222,22 @@ export default function App() {
 
       const cmdText = parseCommand(lastMessage.content);
       if (cmdText) {
-        // Check for restricted commands according to AGENTS.md
-        const isRestricted = 
-          /\b(rm|rmdir)\b/.test(cmdText) || 
-          /\b(install|apt-get|pip|npm)\b/.test(cmdText) ||
-          /[>|]/.test(cmdText) || 
-          /\b(tee|sed|echo)\b/.test(cmdText);
-        
-        if (!isRestricted) {
-          executeCommand(lastMessageIndex, cmdText);
-        }
+        // Full autonomy enabled - execute all commands
+        executeCommand(lastMessageIndex, cmdText);
       }
     } else if (isAgentMode && !isLoading && lastMessage?.role === 'assistant' && lastMessage.command) {
       if (lastMessage.command.status === 'success' || lastMessage.command.status === 'error') {
         if (!triggeredTransfers.current.has(lastMessageIndex)) {
           triggeredTransfers.current.add(lastMessageIndex);
+          
+          if (lastMessage.command.status === 'success') {
+            const transferTarget = parseTransfer(lastMessage.content);
+            if (transferTarget) {
+              handleTransfer(transferTarget, lastMessage.content);
+              return;
+            }
+          }
+
           const autoReply = lastMessage.command.status === 'error'
             ? "[SYSTEM AUTO-REPLY] Command FAILED! Process the error output and correct your command immediately."
             : "[SYSTEM AUTO-REPLY] Command executed successfully. View the outcome block. If the mission is fully completed, summarize it to the user. If more work is needed, delegate or execute.";
@@ -394,6 +408,7 @@ Brug altid modeller med thinking når opgaven kræver dyb reasoning.
 AGENT HANDOFF PROTOCOL & MULTI-AGENT ORCHESTRATION:
 Du SKAL overdrage opgaven til en specialiseret agent, så snart planen er lagt. Når agenterne er færdige, vil de automatisk returnere et AGENT REPORT tilbage til dig.
 Din opgave er at vurdere denne rapport. Skal resultatet videregives til en anden agent for næste skridt? Hvis ja, brug [TRANSFER] med det samme. Hvis opgaven er 100% løst, så rapportér det til brugeren.
+VIGTIGT: Når Web-agenten har færdiggjort koden, skal du ALTID spørge brugeren om tilladelse før du beder systemet om at "Launch Docker" eller "Start Container". Du må ikke deploye autonomt uden at have spurgt om lov til netop deployment-delen til sidst.
 
 Agenter:
 - chat: Dig (Supervisor). Generel brainstorm, godkendelse af agentrapporter og systemstyring.
@@ -415,6 +430,7 @@ AUTONOMY RULES:
 
 For all other actions, just do it. If you need to analyze a file, read it first using 'cat' or 'head'.
 HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bash kommandoer). 
+ABSOLUT ROD-STI (CWD): ${currentCwd}. Brug altid relative stier fra denne rod. Husk at agenterne skal oprette mapper med 'mkdir -p' før de skriver filer for at undgå fejl.
 ${selectedFile ? `The user has a file highlighted: "${selectedFile.path}". Use this for reference, but ALWAYS confirm the target directory before starting a new project or performing bulk operations. Do NOT assume the highlighted file's directory is the project root. If the user says "start project", ask where.` : 'No file is currently highlighted for reference.'}
 ${showFileBrowser ? 'The File Browser is currently visible.' : 'The File Browser is currently MINIMIZED (Minimalisme mode).'}
 CRITICAL: If the user requests a new project or a bulk operation, you MUST identify the target directory. If a file is highlighted in [REFERENCE CONTEXT], do NOT assume its directory is the project root. Always ask for clarification if the target path is ambiguous.` 

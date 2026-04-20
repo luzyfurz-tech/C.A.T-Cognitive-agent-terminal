@@ -64,14 +64,17 @@ if (!existsSync(AUDIT_LOG_PATH)) {
   }
 }
 
-async function logAudit(command: string, status: string, stdout: string = "", stderr: string = "", type: string = "command", agentId: string = "system") {
+async function logAudit(command: string, status: string, stdout: any = "", stderr: any = "", type: string = "command", agentId: string = "system") {
+  const safeStdout = String(stdout || "").substring(0, 500);
+  const safeStderr = String(stderr || "").substring(0, 500);
+  
   const entry = {
     timestamp: new Date().toISOString(),
     type,
     command,
     status,
-    stdout: stdout.substring(0, 500), // Limit size
-    stderr: stderr.substring(0, 500)
+    stdout: safeStdout,
+    stderr: safeStderr
   };
   auditLogs.unshift(entry);
   if (auditLogs.length > 100) auditLogs.pop();
@@ -121,7 +124,7 @@ const execSsh = (config: any, command: string): Promise<string> => {
 
 async function startServer() {
   const app = express();
-  const PORT = parseInt(process.env.PORT || "3000", 10);
+  const PORT = parseInt(process.env.PORT || "3939", 10);
 
   app.use(express.json());
 
@@ -186,7 +189,8 @@ async function startServer() {
       status: "ok",
       os: os.platform(),
       arch: os.arch(),
-      release: os.release()
+      release: os.release(),
+      cwd: process.cwd()
     });
   });
 
@@ -622,19 +626,33 @@ async function startServer() {
     try {
       browser = await chromium.launch({
         headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
       });
-      const page = await browser.newPage();
+      const context = await browser.newContext({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+      });
+      const page = await context.newPage();
       
       // Use DuckDuckGo for search scraping
-      await page.goto(`https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`, { waitUntil: "networkidle", timeout: 20000 });
+      // Attempting to use the non-js version which is lighter for scraping
+      await page.goto(`https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`, { waitUntil: "domcontentloaded", timeout: 30000 });
       
       const results = await page.evaluate(() => {
         const items = Array.from(document.querySelectorAll('.result'));
-        return items.slice(0, 5).map(item => ({
-          title: item.querySelector('.result__title')?.textContent?.trim() || 'No title',
-          url: item.querySelector('.result__a')?.getAttribute('href') || '#',
-          snippet: item.querySelector('.result__snippet')?.textContent?.trim() || 'No snippet available'
-        }));
+        return items.slice(0, 8).map(item => {
+          const linkEl = item.querySelector('.result__a') as HTMLAnchorElement;
+          let url = linkEl?.getAttribute('href') || '#';
+          
+          // Handle relative URLs or DuckDuckGo redirects if possible
+          if (url.startsWith('//')) url = 'https:' + url;
+          if (url.startsWith('/')) url = 'https://duckduckgo.com' + url;
+
+          return {
+            title: item.querySelector('.result__title')?.textContent?.trim() || 'No title',
+            url: url,
+            snippet: item.querySelector('.result__snippet')?.textContent?.trim() || 'No snippet available'
+          };
+        });
       });
       
       res.json({ results });
@@ -662,28 +680,42 @@ async function startServer() {
     try {
       browser = await chromium.launch({
         headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
       });
-      const page = await browser.newPage();
-      await page.goto(url, { waitUntil: "networkidle", timeout: 45000 });
+      const context = await browser.newContext({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+      });
+      const page = await context.newPage();
       
-      const content = await page.evaluate(() => {
+      // Navigate with a slightly more relaxed wait condition to handle slow redirects
+      await page.goto(url, { waitUntil: "load", timeout: 60000 });
+      
+      const pageData = await page.evaluate(() => {
+        const title = document.title;
         // Basic readability cleanup
-        const toRemove = document.querySelectorAll('script, style, nav, footer, header, iframe, noscript');
+        const toRemove = document.querySelectorAll('script, style, nav, footer, header, iframe, noscript, svg, .ad, .ads, .cookie-banner, #cookie-law');
         toRemove.forEach(el => el.remove());
-        return document.body.innerText;
+        return {
+          title,
+          content: document.body.innerText.replace(/\s+/g, ' ').trim()
+        };
       });
 
-      let screenshotPath = null;
       let screenshotUrl = null;
-
       if (screenshot) {
         const filename = `web-snap-${Date.now()}.png`;
-        screenshotPath = path.join(SCREENSHOTS_DIR, filename);
+        const screenshotPath = path.join(SCREENSHOTS_DIR, filename);
         await page.screenshot({ path: screenshotPath, fullPage: false });
         screenshotUrl = `/preview/${filename}`;
       }
       
-      res.json({ url, content: content.substring(0, 15000).trim(), screenshot: screenshotUrl });
+      res.json({ 
+        url, 
+        currentUrl: page.url(),
+        title: pageData.title,
+        content: pageData.content.substring(0, 15000), 
+        screenshot: screenshotUrl 
+      });
     } catch (error: any) {
       console.error("Local Web Fetch Error:", error);
       res.status(500).json({ error: `Fetch failed: ${error.message}` });
@@ -705,16 +737,23 @@ async function startServer() {
     try {
       browser = await chromium.launch({
         headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
       });
-      const page = await browser.newPage();
-      if (url) await page.goto(url, { waitUntil: "networkidle", timeout: 45000 });
+      const context = await browser.newContext({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        viewport: { width: 1280, height: 720 }
+      });
+      const page = await context.newPage();
+      if (url) await page.goto(url, { waitUntil: "load", timeout: 45000 });
       
       let result = "Action completed";
 
       if (action === "click") {
+        await page.waitForSelector(selector, { timeout: 5000 });
         await page.click(selector);
         result = `Clicked ${selector}`;
       } else if (action === "type") {
+        await page.waitForSelector(selector, { timeout: 5000 });
         await page.type(selector, text, { delay: 100 });
         result = `Typed into ${selector}`;
       } else if (action === "press") {
@@ -722,7 +761,7 @@ async function startServer() {
         result = `Pressed ${key}`;
       }
 
-      await humanDelay();
+      await humanDelay(1000, 2000); // Wait for page to react
       
       // Always take a screenshot after action for visual feedback
       const filename = `action-snap-${Date.now()}.png`;
@@ -730,13 +769,23 @@ async function startServer() {
       await page.screenshot({ path: screenshotPath });
       const screenshotUrl = `/preview/${filename}`;
 
-      const content = await page.evaluate(() => {
-        const toRemove = document.querySelectorAll('script, style, nav, footer, header, iframe, noscript');
+      const pageData = await page.evaluate(() => {
+        const toRemove = document.querySelectorAll('script, style, nav, footer, header, iframe, noscript, svg');
         toRemove.forEach(el => el.remove());
-        return document.body.innerText;
+        return {
+          title: document.title,
+          content: document.body.innerText.replace(/\s+/g, ' ').trim()
+        };
       });
       
-      res.json({ status: "Success", result, screenshot: screenshotUrl, content: content.substring(0, 5000).trim() });
+      res.json({ 
+        status: "Success", 
+        result, 
+        screenshot: screenshotUrl, 
+        title: pageData.title,
+        content: pageData.content.substring(0, 5000),
+        currentUrl: page.url()
+      });
     } catch (error: any) {
       console.error("Local Web Action Error:", error);
       res.status(500).json({ error: `Action failed: ${error.message}` });
