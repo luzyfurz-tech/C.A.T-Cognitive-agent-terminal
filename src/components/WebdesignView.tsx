@@ -258,10 +258,11 @@ Når brugeren giver en opgave (f.eks. "Lav en hjemmeside til Kajs Kano"), skal d
    - Gem Dockerfile: [EXECUTE: printf 'FROM nginx:alpine\nCOPY . /usr/share/nginx/html\n' > web_design_workspace/projects/kajs_kano/Dockerfile] (VIGTIGT: Brug IKKE '-e' flaget her).
    - Når filerne er gemt, fortæl brugeren at de kan trykke på "Start Docker" knappen.
 
-STILGUIDE:
-- Altid "No-code" fokus for brugeren: Du skriver og implementerer koden, brugeren trykker kun "Execute".
+STILGUIDE & EFFEKTIVITET:
+- NO CHITCHAT: Undlad at fylde prompten med forklaringer til brugeren ("Jeg vil nu oprette filerne for dig"). Output KUN terminal kommandoerne i [EXECUTE] tags, samt din logik/kode.
+- Altid "No-code" fokus for brugeren: Du skriver og implementerer koden autonomt.
 - Moderne Design: Brug Tailwind CSS eller moderne CSS-variabler. Designet skal være responsivt og visuelt imponerende.
-- Fejlhåndtering: Hvis en kommando fejler, skal du analyse stdout/stderr og foreslå en rettelse med det samme.
+- Fejlhåndtering: Hvis en kommando fejler, modtager du et SYSTEM AUTO-REPLY. Analyser det straks og kør repirer-kommandoer.
 
 MODEL KNOWLEDGE BASE — C.A.T v2.0
 Du har adgang til følgende Ollama Cloud‑modeller.
@@ -292,8 +293,9 @@ AGENTS:
 - security: Sikkerhedsanalyse, penetrationstest og log-audit.
 - ollamaWeb: Web research og interaktion (Søge, Fetch, Screenshot, Click/Type).
 
-For at foreslå en overdragelse, brug: [TRANSFER: agent_id].
-Eksempel: "Jeg er færdig med kodningen. Jeg foreslår vi sender dette til sikkerhedstjek: [TRANSFER: security]"
+For at overdrage opgaver, brug: [TRANSFER: agent_id].
+Eksempel: "Hvis du mangler web-info, brug: [TRANSFER: ollamaWeb]".
+VIGTIGT: NÅR DU ER HELT FÆRDIG MED DIN KODE-OPGAVE, SKAL DU RAPPORTERE TILBAGE TIL SUPERVISOR VED AT SKRIVE: [TRANSFER: chat] efterfulgt af en opsummering.
 
 FORMAT:
 Alle kommandoer skal leveres i formatet: [EXECUTE: kommando]. Forklar kort hvad du gør, før du præsenterer kommandoen.
@@ -317,45 +319,55 @@ NAVIGATION & LINKS:
     }
   }, [messages, isLoading]);
 
-  // Auto-execute commands in Agent Mode
+  // Auto-execute commands and auto-reply in Agent Mode
   useEffect(() => {
     const lastMessage = messages[messages.length - 1];
-    if (isAgentMode && !isLoading && lastMessage?.role === 'assistant' && !lastMessage.command) {
-      // Handle model switching
-      const modelToSet = parseModelSwitch(lastMessage.content);
-      if (modelToSet) {
-        const exists = models.some(m => m.name === modelToSet);
-        if (exists) {
-          onModelChange(modelToSet);
-          setMessages(prev => [...prev, { 
-            role: 'system', 
-            content: `[SYSTEM]: Model switched to ${modelToSet} for Coding view.` 
-          }]);
+    if (isAgentMode && !isLoading && lastMessage?.role === 'assistant') {
+      if (!lastMessage.command) {
+        // Handle model switching
+        const modelToSet = parseModelSwitch(lastMessage.content);
+        if (modelToSet) {
+          const exists = models.some(m => m.name === modelToSet);
+          if (exists) {
+            onModelChange(modelToSet);
+            setMessages(prev => [...prev, { 
+              role: 'system', 
+              content: `[SYSTEM]: Model switched to ${modelToSet} for Coding view.` 
+            }]);
+            return;
+          }
+        }
+
+        const cmdText = parseCommand(lastMessage.content);
+        if (cmdText) {
+          // Check for restricted commands according to AGENTS.md
+          const isRestricted = 
+            /\b(rm|rmdir)\b/.test(cmdText) || 
+            /\b(install|apt-get|pip|npm)\b/.test(cmdText) ||
+            /[>|]/.test(cmdText) || 
+            /\b(tee|sed|echo)\b/.test(cmdText);
+          
+          if (!isRestricted) {
+            executeCommand(messages.length - 1, cmdText);
+            return;
+          }
+        }
+
+        // Handle auto-transfer
+        const transferMatch = lastMessage.content.match(/\[TRANSFER:\s*(.*?)\]/);
+        if (transferMatch) {
+          const target = transferMatch[1].trim();
+          onTransfer(target as any, lastMessage.content);
           return;
         }
-      }
-
-      const cmdText = parseCommand(lastMessage.content);
-      if (cmdText) {
-        // Check for restricted commands according to AGENTS.md
-        const isRestricted = 
-          /\b(rm|rmdir)\b/.test(cmdText) || 
-          /\b(install|apt-get|pip|npm)\b/.test(cmdText) ||
-          /[>|]/.test(cmdText) || 
-          /\b(tee|sed|echo)\b/.test(cmdText);
-        
-        if (!isRestricted) {
-          executeCommand(messages.length - 1, cmdText);
-          return;
-        }
-      }
-
-      // Handle auto-transfer
-      const transferMatch = lastMessage.content.match(/\[TRANSFER:\s*(.*?)\]/);
-      if (transferMatch) {
-        const target = transferMatch[1].trim();
-        onTransfer(target as any, lastMessage.content);
-        return;
+      } else if (lastMessage.command.status === 'success' || lastMessage.command.status === 'error') {
+        const cmdStatusMsg = lastMessage.command.status === 'error'
+          ? "[SYSTEM AUTO-REPLY] Command FAILED! Check the output for errors and fix your code/command immediately."
+          : "[SYSTEM AUTO-REPLY] Command execution finished. What is your next step? If the coding task is completely done, use [TRANSFER: chat] to report back, or transfer directly to [TRANSFER: security] if an audit is needed.";
+        setTimeout(() => {
+          // @ts-ignore
+          handleSubmit({ preventDefault: () => {} }, cmdStatusMsg);
+        }, 300); // Fast 300ms loop
       }
     }
   }, [messages, isAgentMode, isLoading]);
@@ -654,7 +666,13 @@ NAVIGATION & LINKS:
           model: selectedModel,
           messages: [
             { role: 'system', content: systemPrompt },
-            ...newMessages
+            ...newMessages.map(m => {
+              let ctx = m.content;
+              if (m.command && m.command.status !== 'executing') {
+                ctx += `\n\n[COMMAND EXECUTION RESULT]\n$ ${m.command.text}\n${m.command.output}`;
+              }
+              return { role: m.role, content: ctx };
+            })
           ],
           stream: false,
         }),

@@ -121,6 +121,9 @@ export default function SecurityView({
   const DEFAULT_SYSTEM_PROMPT = `Du er AEGIS, en elite-sikkerhedsagent (C.A.T Security Core). Du har høj autonomi.
 Hvis en opgave kræver en shell-kommando, skal du EKSEKVERE den direkte ved at bruge [EXECUTE: kommando].
 
+EFFICIENCY & TONE:
+- NO CHITCHAT. Vær ekstremt kortfattet. Undlad at sige "Jeg vil nu gøre X". Output kun din tekniske vurdering, og den tag du bruger (f.eks [EXECUTE] eller [TRANSFER]).
+
 AUTONOMY RULES:
 1. Du er autoriseret til at køre de fleste kommandoer (læse filer, scanne netværk, tjekke logs) autonomt.
 2. UNDTAGELSER: Du SKAL bede om bekræftelse FØR:
@@ -161,8 +164,9 @@ AGENTS:
 - security: Sikkerhedsanalyse, penetrationstest og log-audit.
 - ollamaWeb: Web research og interaktion (Søge, Fetch, Screenshot, Click/Type).
 
-For at foreslå en overdragelse, brug: [TRANSFER: agent_id].
-Eksempel: "Sikkerhedsanalysen er færdig. Jeg foreslår vi sender resultaterne til hovedchatten for opsummering: [TRANSFER: chat]"`;
+For at overdrage opgaver, brug: [TRANSFER: agent_id].
+Eksempel: "Hvis du har brug for kode-hjælp til at lukke hullet, brug: [TRANSFER: webdesign]".
+VIGTIGT: NÅR DU ER HELT FÆRDIG MED DIN SIKKERHEDS-OPGAVE, SKAL DU RAPPORTERE TILBAGE TIL SUPERVISOR VED AT SKRIVE: [TRANSFER: chat] efterfulgt af en opsummering af resultaterne.`;
 
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
 
@@ -276,31 +280,41 @@ Eksempel: "Sikkerhedsanalysen er færdig. Jeg foreslår vi sender resultaterne t
     }
   }, [messages, isLoading]);
 
-  // Auto-execute commands in Agent Mode
+  // Auto-execute commands and auto-reply in Agent Mode
   useEffect(() => {
     const lastMessage = messages[messages.length - 1];
-    if (isAgentMode && !isLoading && lastMessage?.role === 'assistant' && !lastMessage.command) {
-      const cmdText = parseCommand(lastMessage.content);
-      if (cmdText) {
-        // Check for restricted commands according to AGENTS.md
-        const isRestricted = 
-          /\\b(rm|rmdir)\\b/.test(cmdText) || 
-          /\\b(install|apt-get|pip|npm)\\b/.test(cmdText) ||
-          /[>|]/.test(cmdText) || 
-          /\\b(tee|sed|echo)\\b/.test(cmdText);
-        
-        if (!isRestricted) {
-          executeCommand(messages.length - 1, cmdText);
+    if (isAgentMode && !isLoading && lastMessage?.role === 'assistant') {
+      if (!lastMessage.command) {
+        const cmdText = parseCommand(lastMessage.content);
+        if (cmdText) {
+          // Check for restricted commands according to AGENTS.md
+          const isRestricted = 
+            /\\b(rm|rmdir)\\b/.test(cmdText) || 
+            /\\b(install|apt-get|pip|npm)\\b/.test(cmdText) ||
+            /[>|]/.test(cmdText) || 
+            /\\b(tee|sed|echo)\\b/.test(cmdText);
+          
+          if (!isRestricted) {
+            executeCommand(messages.length - 1, cmdText);
+            return;
+          }
+        }
+
+        // Handle auto-transfer
+        const transferMatch = lastMessage.content.match(/\[TRANSFER:\s*(.*?)\]/);
+        if (transferMatch) {
+          const target = transferMatch[1].trim();
+          onTransfer(target as any, lastMessage.content);
           return;
         }
-      }
-
-      // Handle auto-transfer
-      const transferMatch = lastMessage.content.match(/\[TRANSFER:\s*(.*?)\]/);
-      if (transferMatch) {
-        const target = transferMatch[1].trim();
-        onTransfer(target as any, lastMessage.content);
-        return;
+      } else if (lastMessage.command.status === 'success' || lastMessage.command.status === 'error') {
+        const cmdStatusMsg = lastMessage.command.status === 'error'
+          ? "[SYSTEM AUTO-REPLY] Command FAILED! Check the output for errors and adjust your security analysis immediately."
+          : "[SYSTEM AUTO-REPLY] Command execution finished. What is your next step? If the analysis is completely done, use [TRANSFER: chat] to report back, or transfer directly to [TRANSFER: webdesign] if you need them to fix the code.";
+        // The command finished executing. Trigger the next loop for full autonomy.
+        setTimeout(() => {
+          handleSubmit(undefined, cmdStatusMsg);
+        }, 300);
       }
     }
   }, [messages, isAgentMode, isLoading]);
@@ -350,7 +364,13 @@ Eksempel: "Sikkerhedsanalysen er færdig. Jeg foreslår vi sender resultaterne t
           model: selectedModel,
           messages: [
             { role: 'system', content: systemPrompt },
-            ...newMessages.map(m => ({ role: m.role, content: m.content }))
+            ...newMessages.map(m => {
+              let ctx = m.content;
+              if (m.command && m.command.status !== 'executing') {
+                ctx += `\n\n[COMMAND EXECUTION RESULT]\n$ ${m.command.text}\n${m.command.output}`;
+              }
+              return { role: m.role, content: ctx };
+            })
           ],
           stream: false
         })

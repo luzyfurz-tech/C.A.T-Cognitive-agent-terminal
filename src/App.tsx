@@ -220,6 +220,18 @@ export default function App() {
           executeCommand(lastMessageIndex, cmdText);
         }
       }
+    } else if (isAgentMode && !isLoading && lastMessage?.role === 'assistant' && lastMessage.command) {
+      if (lastMessage.command.status === 'success' || lastMessage.command.status === 'error') {
+        if (!triggeredTransfers.current.has(lastMessageIndex)) {
+          triggeredTransfers.current.add(lastMessageIndex);
+          const autoReply = lastMessage.command.status === 'error'
+            ? "[SYSTEM AUTO-REPLY] Command FAILED! Process the error output and correct your command immediately."
+            : "[SYSTEM AUTO-REPLY] Command executed successfully. View the outcome block. If the mission is fully completed, summarize it to the user. If more work is needed, delegate or execute.";
+          setTimeout(() => {
+            sendMessage(autoReply);
+          }, 300); // Super fast 300ms loop
+        }
+      }
     }
   }, [messages, isAgentMode, isLoading, models, currentView]);
 
@@ -280,6 +292,33 @@ export default function App() {
 
     const userMessage: Message = { role: 'user', content };
     
+    // Log user directive and set supervisor to working
+    if (content !== '[SYSTEM AUTO-REPLY] Command execution finished. Output is in the system context. What is your next step? If the user\'s mission is fully completed, summarize the outcome.') {
+      fetch('/api/mission/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          agent_id: 'chat', // Log under chat to trigger mission active state
+          type: 'directive',
+          event: 'User Directive / Supervisor Tasked',
+          content: content,
+          status: 'Start'
+        })
+      }).catch(console.error);
+    } else {
+      fetch('/api/mission/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          agent_id: 'chat',
+          type: 'event',
+          event: 'Supervisor processing Auto-Reply',
+          content: 'Processing execution results...',
+          status: 'Start'
+        })
+      }).catch(console.error);
+    }
+    
     // Inject file context if a file is selected in the browser
     let contextualMessages = [...messages, userMessage];
     if (selectedFile) {
@@ -302,19 +341,6 @@ export default function App() {
         view_id: 'chat_main',
         role: 'user',
         content: content
-      })
-    }).catch(console.error);
-
-    // Log the user's message to the mission feed
-    fetch('/api/mission/log', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        agent_id: 'user',
-        type: 'directive',
-        event: 'User Directive',
-        content: content,
-        status: 'Success'
       })
     }).catch(console.error);
 
@@ -365,16 +391,23 @@ Brug altid modeller med tools når du skal bruge terminal, filsystem eller brows
 Brug altid modeller med vision når du skal analysere billeder eller websider.
 Brug altid modeller med thinking når opgaven kræver dyb reasoning.
 
-AGENT HANDOFF PROTOCOL:
-Du SKAL overdrage opgaven til en specialiseret agent, så snart planen er lagt.
+AGENT HANDOFF PROTOCOL & MULTI-AGENT ORCHESTRATION:
+Du SKAL overdrage opgaven til en specialiseret agent, så snart planen er lagt. Når agenterne er færdige, vil de automatisk returnere et AGENT REPORT tilbage til dig.
+Din opgave er at vurdere denne rapport. Skal resultatet videregives til en anden agent for næste skridt? Hvis ja, brug [TRANSFER] med det samme. Hvis opgaven er 100% løst, så rapportér det til brugeren.
+
 Agenter:
-- chat: Dig (Supervisor). Generel brainstorm og systemstyring.
-- webdesign: Kodning, UI/UX og frontend udvikling. BRUG DENNE TIL AL KODNING.
+- chat: Dig (Supervisor). Generel brainstorm, godkendelse af agentrapporter og systemstyring.
+- webdesign: Kodning, UI/UX, Docker og frontend udvikling. BRUG DENNE TIL AL KODNING.
 - security: Sikkerhedsanalyse, penetrationstest og log-audit.
 - ollamaWeb: Web research og interaktion (Søge, Fetch, Screenshot, Click/Type).
 
 For at overdrage, brug: [TRANSFER: agent_id].
-Eksempel: "Jeg har forstået opgaven. Jeg sender dette til kodning: [TRANSFER: webdesign]"
+Eksempel 1 (Uddelegering): "Jeg starter researchfasen: [TRANSFER: ollamaWeb]"
+Eksempel 2 (Modtaget rapport, videresender): "Web agenten har fundet dokumentationen. Jeg sender det videre til kodning: [TRANSFER: webdesign]"
+
+EFFICIENCY & TONE:
+- NO CHITCHAT. Vær ekstremt kortfattet for at spare tokens og tid.
+- Direkte Handoffs: Fortæl agenterne at de gerne må overdrage direkte til hinanden (f.eks. Code -> Security) hvis opgaven kræver det, uden at runde dig først, medmindre de er helt færdige med missionen.
 
 AUTONOMY RULES:
 1. You are authorized to execute most commands (reading files, listing directories, checking system status) autonomously without asking.
@@ -386,7 +419,13 @@ ${selectedFile ? `The user has a file highlighted: "${selectedFile.path}". Use t
 ${showFileBrowser ? 'The File Browser is currently visible.' : 'The File Browser is currently MINIMIZED (Minimalisme mode).'}
 CRITICAL: If the user requests a new project or a bulk operation, you MUST identify the target directory. If a file is highlighted in [REFERENCE CONTEXT], do NOT assume its directory is the project root. Always ask for clarification if the target path is ambiguous.` 
                 },
-                ...contextualMessages
+                ...contextualMessages.map(m => {
+                  let ctx = m.content;
+                  if (m.command && m.command.status !== 'executing') {
+                    ctx += `\n\n[COMMAND EXECUTION RESULT]\n$ ${m.command.text}\n${m.command.output}`;
+                  }
+                  return { role: m.role, content: ctx };
+                })
               ]
             : contextualMessages,
           stream: streamEnabled,
@@ -585,12 +624,22 @@ CRITICAL: If the user requests a new project or a bulk operation, you MUST ident
 
   const buildTaskContext = (target: string, content?: string) => {
     if (!content) return "";
+    
+    if (target === 'chat') {
+      return `AGENT REPORT:
+A specialist agent has returned with results.
+CONTEXT / RESULTS:
+${content}
+
+Please review this report. If the overarching mission requires further steps, delegate to the next agent. If the mission is fully complete, summarize the final outcome for the user.`;
+    }
+
     return `TASK BRIEF FOR ${target.toUpperCase()}:
 The Supervisor has delegated this task to you.
 CONTEXT / INSTRUCTIONS:
 ${content}
 
-Please acknowledge and proceed with the mission.`;
+Please acknowledge, proceed with the mission, and report back to the supervisor via [TRANSFER: chat] when finished.`;
   };
 
   const handleTransfer = (target: AgentType, content?: string) => {

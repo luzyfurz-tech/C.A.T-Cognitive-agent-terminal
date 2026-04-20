@@ -157,6 +157,23 @@ async function startServer() {
   app.post("/api/mission/log", async (req, res) => {
     try {
       const result = dbService.log(req.body);
+      
+      // Auto-update mission state for the dashboard based on incoming logs
+      if (req.body.agent_id && ['chat', 'webdesign', 'security', 'ollamaWeb'].includes(req.body.agent_id)) {
+        let newStatus: 'idle' | 'working' | 'error' | 'thinking' = 'idle';
+        if (req.body.status === 'Start' || req.body.status === 'Executing') newStatus = 'working';
+        if (req.body.status === 'Error') newStatus = 'error';
+        if (req.body.event?.toLowerCase().includes('thinking') || req.body.event?.toLowerCase().includes('analyzing')) newStatus = 'thinking';
+
+        await missionService.setAgentStatus(req.body.agent_id, newStatus);
+        
+        // If the supervisor (chat) issues a directive, set it as the active mission
+        if (req.body.agent_id === 'chat' && req.body.type === 'directive') {
+           const snippet = req.body.content.length > 50 ? req.body.content.substring(0, 50) + "..." : req.body.content;
+           await missionService.updateState({ active_mission: snippet });
+        }
+      }
+
       res.json({ status: "Logged", result });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
