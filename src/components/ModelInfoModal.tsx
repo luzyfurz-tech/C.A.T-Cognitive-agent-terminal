@@ -83,8 +83,8 @@ export default function ModelInfoModal({
                 <Brain className="w-5 h-5 text-brand" />
               </div>
               <div>
-                <h2 className="text-lg font-black uppercase tracking-tighter text-text-main">Model Knowledge Base</h2>
-                <p className="text-[10px] uppercase tracking-[0.2em] text-text-muted font-bold">C.A.T v2.0 Intelligence Matrix</p>
+                <h2 className="text-lg font-black uppercase tracking-tighter text-text-main">Brain Cloud Intelligence</h2>
+                <p className="text-[10px] uppercase tracking-[0.2em] text-text-muted font-bold">Neuro-Agentic Matrix v3.0</p>
               </div>
             </div>
             <button 
@@ -99,21 +99,39 @@ export default function ModelInfoModal({
           <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {Object.entries(modelsInfo).map(([name, data]) => {
-                const isInstalled = availableModels.includes(name);
                 const isDisabled = disabledModels.includes(name);
-                const isActive = isInstalled && !isDisabled;
+                const isActive = !isDisabled;
                 
                 return (
-                  <div 
+                  <motion.div 
                     key={name}
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.99 }}
+                    onClick={() => onToggleModel(name)}
                     className={cn(
-                      "p-4 rounded-xl border transition-all duration-300 group bg-bg-light/30 border-border hover:border-brand/50 hover:bg-bg-light/50",
-                      (!isInstalled || isDisabled) && "opacity-80 grayscale-[0.5]"
+                      "p-4 rounded-xl border transition-all duration-300 group cursor-pointer relative overflow-hidden",
+                      isActive 
+                        ? "bg-bg-light/50 border-brand/50 shadow-[0_0_20px_rgba(79,227,212,0.05)]" 
+                        : "bg-surface/10 border-border opacity-30 grayscale hover:opacity-60 hover:grayscale-0"
                     )}
                   >
-                    <div className="flex items-start justify-between mb-3">
+                    {/* Cloud Accent Line */}
+                    <div className={cn(
+                      "absolute top-0 left-0 w-full h-0.5 transition-colors",
+                      isActive ? "bg-brand/50" : "bg-border"
+                    )} />
+
+                    {/* Active Glow Effect */}
+                    {isActive && (
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-brand/5 blur-3xl -mr-12 -mt-12 group-hover:bg-brand/10 transition-colors" />
+                    )}
+
+                    <div className="flex items-start justify-between mb-3 relative z-10">
                       <div className="flex-1">
-                        <h3 className="font-black text-sm uppercase tracking-tight text-text-main group-hover:text-brand transition-colors">
+                        <h3 className={cn(
+                          "font-black text-sm uppercase tracking-tight transition-colors mt-2",
+                          isActive ? "text-brand" : "text-text-main group-hover:text-brand"
+                        )}>
                           {name}
                         </h3>
                         <div className="flex flex-wrap gap-1 mt-1">
@@ -126,43 +144,31 @@ export default function ModelInfoModal({
                       </div>
                       <div className="flex flex-col items-end gap-2">
                         <div className={cn(
-                          "px-2 py-1 rounded text-[8px] font-black uppercase tracking-wider",
-                          isInstalled ? "bg-brand/10 text-brand" : "bg-text-muted/10 text-text-muted"
+                          "px-2 py-1 rounded text-[8px] font-black uppercase tracking-wider shadow-sm",
+                          isActive 
+                            ? "bg-brand text-bg-dark" 
+                            : "bg-red-500/20 text-red-500 border border-red-500/20"
                         )}>
-                          {isInstalled ? 'Installed' : 'Cloud'}
+                          {isActive ? 'Cloud Active' : 'Disconnected'}
                         </div>
-                        
-                        {isInstalled && (
-                          <button
-                            onClick={() => onToggleModel(name)}
-                            className={cn(
-                              "px-2 py-1 rounded text-[8px] font-black uppercase tracking-wider transition-all active:scale-95",
-                              isDisabled 
-                                ? "bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20" 
-                                : "bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500/20"
-                            )}
-                          >
-                            {isDisabled ? 'Deactivated' : 'Active'}
-                          </button>
-                        )}
                       </div>
                     </div>
 
-                    <p className="text-xs text-text-muted mb-4 line-clamp-2 leading-relaxed italic">
+                    <p className="text-xs text-text-muted mb-4 line-clamp-2 leading-relaxed italic relative z-10">
                       "{data.description}"
                     </p>
 
-                    <div className="space-y-3">
+                    <div className="space-y-3 relative z-10">
                       <CapabilityBar label="Reasoning" value={data.capabilities.reasoning} icon={Brain} />
                       <CapabilityBar label="Coding" value={data.capabilities.coding} icon={Code} />
                       <CapabilityBar label="Vision" value={data.capabilities.vision} icon={Eye} />
                       <CapabilityBar label="Tools" value={data.capabilities.tools} icon={Zap} />
                     </div>
 
-                    <div className="mt-4 pt-4 border-t border-border/50 flex items-center justify-between">
+                    <div className="mt-4 pt-4 border-t border-border/50 flex items-center justify-between relative z-10">
                       <div className="flex gap-1.5">
                         {data.agents.map(agent => (
-                          <div key={agent} title={`Optimized for ${agent}`} className="p-1.5 bg-bg-dark rounded-lg text-text-muted hover:text-brand transition-colors">
+                          <div key={agent} title={`Optimized for ${agent}`} className="p-1.5 bg-bg-dark rounded-lg text-text-muted group-hover:text-brand transition-colors">
                             {agent === 'chat' && <Bot className="w-3 h-3" />}
                             {agent === 'coding' && <Code className="w-3 h-3" />}
                             {agent === 'research' && <Globe className="w-3 h-3" />}
@@ -174,7 +180,7 @@ export default function ModelInfoModal({
                         {data.capabilities.speed}/10 SPD
                       </div>
                     </div>
-                  </div>
+                  </motion.div>
                 );
               })}
             </div>
@@ -185,15 +191,15 @@ export default function ModelInfoModal({
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-brand" />
-                <span>High Performance</span>
+                <span>Cloud Link Active</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-text-muted" />
-                <span>Not Installed</span>
+                <div className="w-2 h-2 rounded-full bg-red-500/50" />
+                <span>Cloud Link Severed</span>
               </div>
             </div>
             <div>
-              Total Models: {Object.keys(modelsInfo).length} | Active: {availableModels.filter(m => !disabledModels.includes(m)).length}
+              CLOUD BRAIN CAPACITY: {Object.keys(modelsInfo).filter(m => !disabledModels.includes(m)).length} / {Object.keys(modelsInfo).length}
             </div>
           </div>
         </motion.div>

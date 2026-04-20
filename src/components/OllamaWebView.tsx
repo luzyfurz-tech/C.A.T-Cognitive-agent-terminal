@@ -52,6 +52,7 @@ export default function OllamaWebView({
   const [isModelInfoOpen, setIsModelInfoOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const processedTransferRef = useRef<string | null>(null);
+  const triggeredTransfers = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     if (pendingTransfer && pendingTransfer.target === 'ollamaWeb' && onContextUsed) {
@@ -218,13 +219,14 @@ The system automatically detects screenshot paths (e.g., /preview/web-snap-xxx.p
 
   // Auto-execute model switching and handle transfers
   useEffect(() => {
-    const lastMessage = messages[messages.length - 1];
-    if (isAgentMode && !isLoading && lastMessage?.role === 'assistant') {
+    const lastMessageIndex = messages.length - 1;
+    const lastMessage = messages[lastMessageIndex];
+    if (isAgentMode && !isLoading && (lastMessage?.role === 'assistant' || lastMessage?.role === 'user')) {
       // Handle model switching
       const modelToSet = parseModelSwitch(lastMessage.content);
-      if (modelToSet) {
-        const exists = models.some(m => m.name === modelToSet);
-        if (exists) {
+      if (modelToSet && lastMessage.role === 'assistant') {
+        const canSwitch = models.some(m => m.name === modelToSet && !disabledModels.includes(m.name));
+        if (canSwitch) {
           onModelChange(modelToSet);
           setMessages(prev => [...prev, { 
             role: 'assistant', 
@@ -233,8 +235,16 @@ The system automatically detects screenshot paths (e.g., /preview/web-snap-xxx.p
           return;
         }
       }
+
+      // Handle auto-transfer
+      const transferTarget = parseTransfer(lastMessage.content);
+      if (transferTarget && transferTarget !== 'ollamaWeb' && !triggeredTransfers.current.has(lastMessageIndex)) {
+        triggeredTransfers.current.add(lastMessageIndex);
+        onTransfer(transferTarget, lastMessage.content);
+        return;
+      }
     }
-  }, [messages, isAgentMode, isLoading, models, onModelChange]);
+  }, [messages, isAgentMode, isLoading, models, disabledModels, onModelChange, onTransfer]);
 
   const parseModelSwitch = (text: string) => {
     const match = text.match(/\[SET_MODEL:\s*(.*?)\]/);
@@ -424,6 +434,7 @@ The system automatically detects screenshot paths (e.g., /preview/web-snap-xxx.p
 
   const clearChat = () => {
     setMessages([]);
+    triggeredTransfers.current.clear();
   };
 
   const copyToClipboard = (text: string, id: number) => {

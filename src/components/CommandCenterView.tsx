@@ -94,6 +94,7 @@ export default function CommandCenterView({ apiKey, onGlobalMessage }: { apiKey:
       case 'webdesign': return <LayoutGrid className="w-4 h-4" />;
       case 'security': return <Shield className="w-4 h-4" />;
       case 'ollamaWeb': return <Globe className="w-4 h-4" />;
+      case 'hermes': return <Zap className="w-4 h-4" />;
       default: return <Terminal className="w-4 h-4" />;
     }
   };
@@ -125,8 +126,8 @@ export default function CommandCenterView({ apiKey, onGlobalMessage }: { apiKey:
               <Activity className="w-5 h-5 text-brand" />
             </div>
             <div>
-              <h2 className="text-lg font-black uppercase tracking-widest">Mission Control</h2>
-              <p className="text-[10px] text-text-muted uppercase tracking-[0.3em]">Autonomous Agent Mesh Dashboard</p>
+              <h2 className="text-lg font-black uppercase tracking-widest">Brain Center</h2>
+              <p className="text-[10px] text-text-muted uppercase tracking-[0.3em]">Cloud Neuro-Agent Mesh Dashboard</p>
             </div>
           </div>
           <div className="flex items-center gap-4">

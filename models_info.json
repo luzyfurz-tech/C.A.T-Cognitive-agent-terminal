@@ -178,5 +178,17 @@
     "tags": ["vision", "cloud"],
     "agents": ["chat", "ollamaWeb"],
     "capabilities": { "reasoning": 6, "coding": 4, "vision": 8, "tools": 0, "speed": 9, "context": 6 }
+  },
+  "hermes3": {
+    "description": "Nous Research flagskibsmodel, optimeret til agentic flows, tool-calling og rollespil",
+    "tags": ["tools", "agentic", "cloud"],
+    "agents": ["hermes", "chat"],
+    "capabilities": { "reasoning": 8, "coding": 7, "vision": 0, "tools": 10, "speed": 7, "context": 8 }
+  },
+  "llama3-hermes-pro": {
+    "description": "Hermes Pro variant optimeret til professionelle tool-calling workflows og JSON output",
+    "tags": ["tools", "json", "cloud"],
+    "agents": ["hermes"],
+    "capabilities": { "reasoning": 7, "coding": 6, "vision": 0, "tools": 10, "speed": 8, "context": 7 }
   }
 }

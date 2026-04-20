@@ -9,6 +9,7 @@ import WebdesignView from './components/WebdesignView';
 import DockerView from './components/DockerView';
 import SecurityView from './components/SecurityView';
 import OllamaWebView from './components/OllamaWebView';
+import HermesView from './components/HermesView';
 import BootSequence from './components/BootSequence';
 import CATLogo from './components/CATLogo';
 import ModelInfoModal from './components/ModelInfoModal';
@@ -60,7 +61,8 @@ export default function App() {
     webdesign: localStorage.getItem('webdesign_model') || '',
     docker: localStorage.getItem('docker_model') || '',
     ollamaWeb: localStorage.getItem('ollamaweb_model') || '',
-    security: localStorage.getItem('security_model') || ''
+    security: localStorage.getItem('security_model') || '',
+    hermes: localStorage.getItem('hermes_model') || ''
   });
   const [theme, setTheme] = useState<string>(() => localStorage.getItem('app_theme') || 'modern');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -75,7 +77,7 @@ export default function App() {
   const [showFileBrowser, setShowFileBrowser] = useState(true);
   const [pendingTransfer, setPendingTransfer] = useState<{ target: string; content: string } | null>(null);
   const [transferNotification, setTransferNotification] = useState<{ target: string; show: boolean }>({ target: '', show: false });
-  const [currentView, setCurrentView] = useState<'chat' | 'webdesign' | 'docker' | 'ollamaWeb' | 'security'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'webdesign' | 'docker' | 'ollamaWeb' | 'security' | 'hermes'>('chat');
   const [selectedFile, setSelectedFile] = useState<any>(null);
   const [disabledModels, setDisabledModels] = useState<string[]>(() => {
     const saved = localStorage.getItem('disabled_models');
@@ -197,18 +199,23 @@ export default function App() {
   useEffect(() => {
     const lastMessageIndex = messages.length - 1;
     const lastMessage = messages[lastMessageIndex];
-    if (isAgentMode && !isLoading && lastMessage?.role === 'assistant' && !lastMessage.command) {
+    if (isAgentMode && !isLoading && (lastMessage?.role === 'assistant' || lastMessage?.role === 'user') && !lastMessage.command) {
       // Handle model switching
       const modelToSet = parseModelSwitch(lastMessage.content);
-      if (modelToSet) {
-        const exists = models.some(m => m.name === modelToSet);
-        if (exists) {
+      if (modelToSet && lastMessage.role === 'assistant') { // Model switching still restricted to assistant for flow consistency
+        const canSwitch = models.some(m => m.name === modelToSet && !disabledModels.includes(m.name));
+        if (canSwitch) {
           setViewModels(prev => ({ ...prev, [currentView]: modelToSet }));
           setMessages(prev => [...prev, { 
             role: 'system', 
             content: `[SYSTEM]: Model switched to ${modelToSet} for ${currentView} view.` 
           }]);
           return;
+        } else {
+          setMessages(prev => [...prev, { 
+            role: 'system', 
+            content: `[SYSTEM]: Cannot switch to ${modelToSet}. Model is either not available or deactivated.` 
+          }]);
         }
       }
 
@@ -222,7 +229,7 @@ export default function App() {
 
       const cmdText = parseCommand(lastMessage.content);
       if (cmdText) {
-        // Full autonomy enabled - execute all commands
+        // Full autonomy enabled - execute all commands (including user-initiated ones for rapid workflow)
         executeCommand(lastMessageIndex, cmdText);
       }
     } else if (isAgentMode && !isLoading && lastMessage?.role === 'assistant' && lastMessage.command) {
@@ -247,7 +254,7 @@ export default function App() {
         }
       }
     }
-  }, [messages, isAgentMode, isLoading, models, currentView]);
+  }, [messages, isAgentMode, isLoading, models, currentView, disabledModels]);
 
   useEffect(() => {
     localStorage.setItem('chat_model', viewModels.chat);
@@ -255,6 +262,7 @@ export default function App() {
     localStorage.setItem('docker_model', viewModels.docker || '');
     localStorage.setItem('ollamaweb_model', viewModels.ollamaWeb || '');
     localStorage.setItem('security_model', viewModels.security || '');
+    localStorage.setItem('hermes_model', viewModels.hermes || '');
   }, [viewModels]);
 
   useEffect(() => {
@@ -415,6 +423,7 @@ Agenter:
 - webdesign: Kodning, UI/UX, Docker og frontend udvikling. BRUG DENNE TIL AL KODNING.
 - security: Sikkerhedsanalyse, penetrationstest og log-audit.
 - ollamaWeb: Web research og interaktion (Søge, Fetch, Screenshot, Click/Type).
+- hermes: Avanceret tool-calling, API integrationer og CLI-baseret interaktion. BRUG DENNE til integrationer eller komplekse tool-tasks.
 
 For at overdrage, brug: [TRANSFER: agent_id].
 Eksempel 1 (Uddelegering): "Jeg starter researchfasen: [TRANSFER: ollamaWeb]"
@@ -630,12 +639,12 @@ CRITICAL: If the user requests a new project or a bulk operation, you MUST ident
 
   const parseCommand = (content: string) => {
     const match = content.match(/\[EXECUTE:\s*(.*?)\]/);
-    return match ? match[1] : null;
+    return match ? match[1].trim() : null;
   };
 
   const parseTransfer = (text: string) => {
     const match = text.match(/\[TRANSFER:\s*(.*?)\]/);
-    return match ? match[1] as AgentType : null;
+    return match ? match[1].trim() as AgentType : null;
   };
 
   const buildTaskContext = (target: string, content?: string) => {
@@ -671,12 +680,13 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
 
   const parseModelSwitch = (content: string) => {
     const match = content.match(/\[SET_MODEL:\s*(.*?)\]/);
-    return match ? match[1] : null;
+    return match ? match[1].trim() : null;
   };
 
   const clearChat = () => {
     setMessages([]);
     setError(null);
+    triggeredTransfers.current.clear();
     fetch('/api/chat/history/chat_main', { method: 'DELETE' }).catch(console.error);
   };
 
@@ -771,6 +781,16 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
               >
                 <Shield className="w-3.5 h-3.5" />
                 Security
+              </button>
+              <button
+                onClick={() => setCurrentView('hermes')}
+                className={cn(
+                  "px-5 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2",
+                  currentView === 'hermes' ? "bg-surface text-[#4FE3D4] panel-active" : "text-text-muted hover:text-text-main border border-transparent"
+                )}
+              >
+                <Zap className="w-3.5 h-3.5" />
+                Hermes
               </button>
             </div>
 
@@ -929,6 +949,22 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
             onModelChange={(model) => setViewModels(prev => ({ ...prev, ollamaWeb: model }))}
             isAgentMode={isAgentMode}
             modelsInfo={modelsInfo}
+            onTransfer={handleTransfer}
+            pendingTransfer={pendingTransfer}
+            onContextUsed={() => setPendingTransfer(null)}
+          />
+        </div>
+
+        {/* Hermes View */}
+        <div className={cn("absolute inset-0 flex overflow-hidden", currentView !== 'hermes' && "hidden")}>
+          <HermesView 
+            apiKey={apiKey} 
+            selectedModel={viewModels.hermes}
+            models={models}
+            disabledModels={disabledModels}
+            onModelChange={(model) => setViewModels(prev => ({ ...prev, hermes: model }))}
+            modelsInfo={modelsInfo}
+            isAgentMode={isAgentMode}
             onTransfer={handleTransfer}
             pendingTransfer={pendingTransfer}
             onContextUsed={() => setPendingTransfer(null)}
@@ -1300,7 +1336,7 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
               </div>
 
               <div className="p-4 bg-[#6EC8FF]/5 border-t border-border text-center">
-                <p className="text-[9px] font-mono text-[#6EC8FF]/50 uppercase tracking-widest">Secure Neural Link Established</p>
+                <p className="text-[9px] font-mono text-[#6EC8FF]/50 uppercase tracking-widest">Neuro-Link Established</p>
               </div>
             </motion.div>
           </div>

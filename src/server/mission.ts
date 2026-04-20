@@ -18,14 +18,33 @@ const DEFAULT_STATE: MissionState = {
     chat: 'idle',
     webdesign: 'idle',
     security: 'idle',
-    ollamaWeb: 'idle'
+    ollamaWeb: 'idle',
+    hermes: 'idle'
   },
   last_updated: new Date().toISOString()
 };
 
-// Ensure file exists
+// Ensure file exists and contains all expected agents
 if (!existsSync(STATE_PATH)) {
   writeFileSync(STATE_PATH, JSON.stringify(DEFAULT_STATE, null, 2));
+} else {
+  try {
+    const content = readFileSync(STATE_PATH, 'utf-8');
+    const state = JSON.parse(content);
+    let changed = false;
+    
+    // Migration: ensure hermes exists
+    if (!state.agent_statuses.hermes) {
+      state.agent_statuses.hermes = 'idle';
+      changed = true;
+    }
+    
+    if (changed) {
+      writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
+    }
+  } catch (e) {
+    console.error("Failed to migrate mission state:", e);
+  }
 }
 
 export const missionService = {

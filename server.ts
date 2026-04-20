@@ -22,7 +22,7 @@ const execAsync = promisify(exec);
 
 // Ensure web_design_workspace directory structure exists
 const WEB_DESIGN_ROOT = path.join(process.cwd(), "web_design_workspace");
-const WORKSPACE_DIRS = ["projects", "logs", "temp", "docker", "security", "screenshots"];
+const WORKSPACE_DIRS = ["projects", "logs", "temp", "docker", "security", "hermes", "screenshots"];
 
 if (!existsSync(WEB_DESIGN_ROOT)) {
   mkdirSync(WEB_DESIGN_ROOT);
@@ -88,7 +88,7 @@ async function logAudit(command: string, status: string, stdout: any = "", stder
       event: command,
       content: stdout || stderr || "",
       status,
-      metadata: JSON.stringify({ stderr: stderr.substring(0, 200) })
+      metadata: JSON.stringify({ stderr: safeStderr.substring(0, 200) })
     });
   } catch (e) {
     console.error("Failed to write audit log:", e);
@@ -162,11 +162,12 @@ async function startServer() {
       const result = dbService.log(req.body);
       
       // Auto-update mission state for the dashboard based on incoming logs
-      if (req.body.agent_id && ['chat', 'webdesign', 'security', 'ollamaWeb'].includes(req.body.agent_id)) {
+      if (req.body.agent_id && ['chat', 'webdesign', 'security', 'ollamaWeb', 'hermes'].includes(req.body.agent_id)) {
         let newStatus: 'idle' | 'working' | 'error' | 'thinking' = 'idle';
         if (req.body.status === 'Start' || req.body.status === 'Executing') newStatus = 'working';
         if (req.body.status === 'Error') newStatus = 'error';
-        if (req.body.event?.toLowerCase().includes('thinking') || req.body.event?.toLowerCase().includes('analyzing')) newStatus = 'thinking';
+        const eventLower = (req.body.event || '').toLowerCase();
+        if (eventLower.includes('thinking') || eventLower.includes('analyzing')) newStatus = 'thinking';
 
         await missionService.setAgentStatus(req.body.agent_id, newStatus);
         
@@ -233,7 +234,10 @@ async function startServer() {
     if (!apiKey) return res.status(401).json({ error: "Unauthorized" });
 
     try {
-      const options = cwd ? { cwd: path.resolve(process.cwd(), cwd) } : {};
+      const options = {
+        cwd: cwd ? path.resolve(process.cwd(), cwd) : process.cwd(),
+        shell: '/bin/bash' 
+      };
       const { stdout, stderr } = await execAsync(command, options);
       await logAudit(command, "Success", stdout, stderr);
       res.json({ 
@@ -550,7 +554,7 @@ async function startServer() {
       const ollamaHost = xHost || process.env.OLLAMA_HOST || "https://ollama.com";
       const ollamaApiKey = process.env.OLLAMA_API_KEY || apiKey;
 
-      const response = await fetch(`${ollamaHost}/api/tags`, {
+      const response = await fetch(`${ollamaHost.replace(/\/$/, "")}/api/tags`, {
         headers: ollamaApiKey ? {
           Authorization: `Bearer ${ollamaApiKey}`,
         } : {},
@@ -567,49 +571,88 @@ async function startServer() {
   app.post("/api/chat", async (req, res) => {
     const { model, messages, stream } = req.body;
     const apiKey = req.headers.authorization?.split(" ")[1];
-    const xHost = req.headers['x-ollama-host'] as string;
+    const xHost = req.headers["x-ollama-host"] as string;
 
     if (!apiKey) {
       return res.status(401).json({ error: "API Key required" });
     }
 
+    const ollamaHost = xHost || process.env.OLLAMA_HOST || "https://ollama.com";
+    const ollamaApiKey = process.env.OLLAMA_API_KEY || apiKey;
+
+    console.log(`[Ollama Request] Model: ${model}, Host: ${ollamaHost}, Stream: ${stream}`);
+
     try {
-      const ollamaHost = xHost || process.env.OLLAMA_HOST || "https://ollama.com";
-      const ollamaApiKey = process.env.OLLAMA_API_KEY || apiKey;
-
-      const ollama = new Ollama({
-        host: ollamaHost,
-        headers: ollamaApiKey ? {
+      const response = await fetch(`${ollamaHost.replace(/\/$/, "")}/api/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
           Authorization: `Bearer ${ollamaApiKey}`,
-        } : {},
-      });
-
-      if (stream) {
-        const response = await ollama.chat({
+        },
+        body: JSON.stringify({
           model,
           messages,
-          stream: true,
-        });
+          stream: !!stream,
+        }),
+      });
 
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Ollama Error (${response.status}):`, errorText);
+        throw new Error(errorText || `HTTP ${response.status}`);
+      }
+
+      if (stream) {
         res.setHeader("Content-Type", "text/event-stream");
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("Connection", "keep-alive");
 
-        for await (const part of response) {
-          res.write(`data: ${JSON.stringify(part)}\n\n`);
+        if (!response.body) throw new Error("No response body");
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const data = JSON.parse(line);
+              // Ensure thinking exists
+              if (data.message && !data.message.thinking) {
+                data.message.thinking = "";
+              }
+              res.write(`data: ${JSON.stringify(data)}\n\n`);
+            } catch (e) {
+              console.warn("Failed to parse Ollama chunk:", line);
+            }
+          }
         }
         res.end();
       } else {
-        const response = await ollama.chat({
-          model,
-          messages,
-          stream: false,
-        });
-        res.json(response);
+        const data = await response.json();
+        // Ensure message structure is consistent with what the frontend expects
+        const safeResponse = {
+          ...data,
+          message: {
+            ...data.message,
+            thinking: (data.message as any)?.thinking || ""
+          }
+        };
+        res.json(safeResponse);
       }
     } catch (error: any) {
       console.error("Ollama API Error:", error);
-      res.status(error.status || 500).json({ error: error.message || "Internal Server Error" });
+      const statusCode = error.status || 500;
+      const errorMessage = error.message || "Internal Server Error";
+      await logAudit(`Ollama Chat Error`, "Error", `Model: ${model}`, errorMessage, "api_error", "ollama");
+      res.status(statusCode).json({ error: errorMessage });
     }
   });
 

@@ -75,10 +75,10 @@ export default function BootSequence({ onComplete }: { onComplete: () => void })
           className="space-y-4 flex flex-col items-center"
         >
           <div className="text-8xl font-serif italic font-black text-[#00BFFF] drop-shadow-[0_0_20px_rgba(0,191,255,0.8)]">
-            C.A.T
+            Brain Cloud
           </div>
           <div className="text-sm font-mono text-[#00BFFF] tracking-[0.5em] uppercase opacity-80">
-            Cognitive Agent Terminal
+            Neuro-Agentic Platform
           </div>
         </motion.div>
 

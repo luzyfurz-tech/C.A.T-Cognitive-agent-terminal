@@ -24,15 +24,15 @@ export default function CATLogo() {
         x="100" 
         y="35" 
         fontFamily="Orbitron, sans-serif" 
-        fontSize="28" 
+        fontSize="18" 
         fill="url(#textGradient)" 
         filter="url(#glow)" 
-        letterSpacing="8" 
+        letterSpacing="2" 
         fontWeight="900"
         textAnchor="middle"
         className="animate-pulse"
       >
-        C.A.T
+        BRAIN CLOUD
       </text>
       
       {/* Tech accents */}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Share2, Code, Shield, Globe, Bot, ArrowRight, Copy, Check } from 'lucide-react';
+import { Share2, Code, Shield, Globe, Bot, ArrowRight, Copy, Check, Zap } from 'lucide-react';
 import { motion } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -8,7 +8,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export type AgentType = 'chat' | 'webdesign' | 'security' | 'ollamaWeb';
+export type AgentType = 'chat' | 'webdesign' | 'security' | 'ollamaWeb' | 'hermes';
 
 interface AgentTransferProps {
   currentAgent: AgentType;
@@ -22,6 +22,7 @@ const AGENTS: { id: AgentType; label: string; icon: any; color: string }[] = [
   { id: 'webdesign', label: 'Coding', icon: Code, color: 'text-[#4FE3D4]' },
   { id: 'security', label: 'Security', icon: Shield, color: 'text-[#FF7A2F]' },
   { id: 'ollamaWeb', label: 'OllamaWeb', icon: Globe, color: 'text-brand' },
+  { id: 'hermes', label: 'Hermes', icon: Zap, color: 'text-[#6EC8FF]' },
 ];
 
 export default function AgentTransfer({ currentAgent, onTransfer, suggestedAgent, content }: AgentTransferProps) {

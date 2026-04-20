@@ -127,6 +127,7 @@ export default function WebdesignView({
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const triggeredTransfers = useRef<Set<number>>(new Set());
 
   const fetchProjects = async () => {
     try {
@@ -285,6 +286,7 @@ AGENTS:
 - webdesign: Kodning, UI/UX og frontend udvikling.
 - security: Sikkerhedsanalyse, penetrationstest og log-audit.
 - ollamaWeb: Web research og interaktion (Søge, Fetch, Screenshot, Click/Type).
+- hermes: Avanceret tool-calling, API integrationer og CLI-baseret interaktion.
 
 For at overdrage opgaver, brug: [TRANSFER: agent_id].
 Eksempel: "Hvis du mangler web-info, brug: [TRANSFER: ollamaWeb]".
@@ -314,14 +316,15 @@ NAVIGATION & LINKS:
 
   // Auto-execute commands and auto-reply in Agent Mode
   useEffect(() => {
-    const lastMessage = messages[messages.length - 1];
-    if (isAgentMode && !isLoading && lastMessage?.role === 'assistant') {
+    const lastMessageIndex = messages.length - 1;
+    const lastMessage = messages[lastMessageIndex];
+    if (isAgentMode && !isLoading && (lastMessage?.role === 'assistant' || lastMessage?.role === 'user')) {
       if (!lastMessage.command) {
         // Handle model switching
         const modelToSet = parseModelSwitch(lastMessage.content);
-        if (modelToSet) {
-          const exists = models.some(m => m.name === modelToSet);
-          if (exists) {
+        if (modelToSet && lastMessage.role === 'assistant') {
+          const canSwitch = models.some(m => m.name === modelToSet && !disabledModels.includes(m.name));
+          if (canSwitch) {
             onModelChange(modelToSet);
             setMessages(prev => [...prev, { 
               role: 'system', 
@@ -333,38 +336,43 @@ NAVIGATION & LINKS:
 
         const cmdText = parseCommand(lastMessage.content);
         if (cmdText) {
-          executeCommand(messages.length - 1, cmdText);
+          executeCommand(lastMessageIndex, cmdText);
           return;
         }
 
         // Handle auto-transfer
         const transferMatch = lastMessage.content.match(/\[TRANSFER:\s*(.*?)\]/);
-        if (transferMatch) {
+        if (transferMatch && !triggeredTransfers.current.has(lastMessageIndex)) {
+          triggeredTransfers.current.add(lastMessageIndex);
           const target = transferMatch[1].trim();
           onTransfer(target as any, lastMessage.content);
           return;
         }
       } else if (lastMessage.command.status === 'success' || lastMessage.command.status === 'error') {
-        if (lastMessage.command.status === 'success') {
-          // If the message also contained a transfer, execute it now instead of replying
-          const transferMatch = lastMessage.content.match(/\[TRANSFER:\s*(.*?)\]/);
-          if (transferMatch) {
-            const target = transferMatch[1].trim();
-            onTransfer(target as any, lastMessage.content);
-            return;
+        if (!triggeredTransfers.current.has(lastMessageIndex)) {
+          triggeredTransfers.current.add(lastMessageIndex);
+          
+          if (lastMessage.command.status === 'success') {
+            // If the message also contained a transfer, execute it now instead of replying
+            const transferMatch = lastMessage.content.match(/\[TRANSFER:\s*(.*?)\]/);
+            if (transferMatch) {
+              const target = transferMatch[1].trim();
+              onTransfer(target as any, lastMessage.content);
+              return;
+            }
           }
-        }
 
-        const cmdStatusMsg = lastMessage.command.status === 'error'
-          ? "[SYSTEM AUTO-REPLY] Command FAILED! Check the output for errors and fix your code/command immediately."
-          : "[SYSTEM AUTO-REPLY] Command execution finished. What is your next step? If the coding task is completely done, use [TRANSFER: chat] to report back, or transfer directly to [TRANSFER: security] if an audit is needed.";
-        setTimeout(() => {
-          // @ts-ignore
-          handleSubmit({ preventDefault: () => {} }, cmdStatusMsg);
-        }, 300); // Fast 300ms loop
+          const cmdStatusMsg = lastMessage.command.status === 'error'
+            ? "[SYSTEM AUTO-REPLY] Command FAILED! Check the output for errors and fix your code/command immediately."
+            : "[SYSTEM AUTO-REPLY] Command execution finished. What is your next step? If the coding task is completely done, use [TRANSFER: chat] to report back, or transfer directly to [TRANSFER: security] if an audit is needed.";
+          setTimeout(() => {
+            // @ts-ignore
+            handleSubmit({ preventDefault: () => {} }, cmdStatusMsg);
+          }, 300); // Fast 300ms loop
+        }
       }
     }
-  }, [messages, isAgentMode, isLoading]);
+  }, [messages, isAgentMode, isLoading, models, disabledModels, onModelChange, onTransfer]);
 
   const parseCommand = (text: string) => {
     const match = text.match(/\[EXECUTE:\s*(.*?)\]/);
@@ -756,7 +764,10 @@ NAVIGATION & LINKS:
             </div>
           </div>
           <button 
-            onClick={() => setMessages([])} 
+            onClick={() => {
+              setMessages([]);
+              triggeredTransfers.current.clear();
+            }} 
             className="p-2 hover:bg-[#FF7A2F]/10 hover:text-[#FF7A2F] rounded-lg transition-all text-text-muted"
             title="Clear Chat"
           >
