@@ -17,6 +17,7 @@ chromium.use(stealth());
 import os from "os";
 import { dbService } from "./src/server/db";
 import { missionService } from "./src/server/mission";
+import { pgService, initPgSchema } from "./src/server/pg_db";
 
 const execAsync = promisify(exec);
 
@@ -131,6 +132,12 @@ const execSsh = (config: any, command: string): Promise<string> => {
 async function startServer() {
   const app = express();
   const PORT = parseInt(process.env.PORT || "3939", 10);
+
+  let isPgReady = false;
+  // Initialize Postgres Schema lazily
+  initPgSchema().then(() => {
+    isPgReady = true;
+  }).catch(e => console.log("[Postgres] Service not active yet or misconfigured. Using SQLite fallback."));
 
   app.use(express.json());
 
@@ -314,8 +321,13 @@ async function startServer() {
     if (!apiKey) return res.status(401).json({ error: "Unauthorized" });
 
     try {
+      if (isPgReady) {
+        await pgService.saveKnowledge(key, value, tags || "");
+      }
+      // Redundancy: keep SQLite in sync
       dbService.saveKnowledge(key, value, tags || "");
-      await logAudit(`Knowledge Saved: ${key}`, "Success", `Tags: ${tags}`, "", "knowledge");
+      
+      await logAudit(`Knowledge Saved: ${key}`, "Success", `Tags: ${tags} (Neural Core: ${isPgReady ? 'PG' : 'SQLite'})`, "", "knowledge");
       res.json({ status: "Success" });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -328,11 +340,21 @@ async function startServer() {
     if (!apiKey) return res.status(401).json({ error: "Unauthorized" });
 
     try {
-      const results = dbService.searchKnowledge(q as string || "");
+      let results;
+      if (isPgReady) {
+        results = await pgService.searchKnowledge(q as string || "");
+      } else {
+        results = dbService.searchKnowledge(q as string || "");
+      }
       res.json({ results });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
+  });
+
+  // Postgres Status Check
+  app.get("/api/system/postgres", (req, res) => {
+    res.json({ status: isPgReady ? "Connected" : "Disconnected", engine: isPgReady ? "PostgreSQL" : "SQLite" });
   });
 
   // System State Snapshots (Rollback System)

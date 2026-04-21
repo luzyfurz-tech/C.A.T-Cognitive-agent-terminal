@@ -16,6 +16,7 @@
   "dependencies": {
     "@tailwindcss/typography": "^0.5.19",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/pg": "^8.20.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/ssh2": "^1.15.5",
     "@vitejs/plugin-react": "^5.0.4",
@@ -29,6 +30,7 @@
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "ollama": "^0.6.3",
+    "pg": "^8.20.0",
     "playwright": "^1.59.1",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",

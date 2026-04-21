@@ -1,0 +1,16 @@
+services:
+  catomes-db:
+    image: postgres:15-alpine
+    container_name: catomes_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-catome_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-catome_secure_pass_3939}
+      POSTGRES_DB: ${POSTGRES_DB:-catomes_neural_core}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

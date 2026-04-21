@@ -111,6 +111,7 @@ export default function App() {
   const [catomeStore, setCatomeStore] = useState<CatomeStore>({ active_mission: null, catomes: [] });
   const [visionFrame, setVisionFrame] = useState<string | null>(null);
   const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const [dbEngine, setDbEngine] = useState<{ status: string; engine: string }>({ status: 'Disconnected', engine: 'SQLite' });
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -442,6 +443,19 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
+  useEffect(() => {
+    const checkPg = async () => {
+      try {
+        const res = await fetch('/api/system/postgres');
+        const data = await res.json();
+        setDbEngine(data);
+      } catch (e) {}
+    };
+    checkPg();
+    const interval = setInterval(checkPg, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   const fetchModels = async () => {
     if (!apiKey) return;
     setIsFetchingModels(true);
@@ -649,6 +663,8 @@ EFFICIENCY:
 - NO CHITCHAT. High density, low token usage.
 - DIRECT HANDOFFS: Specialists can transfer between each other.
 - AUTONOMY: ${isFullAutonomy ? 'FULL AUTONOMY. Execute all commands (write/install/del) and delegate without asking.' : 'RESTRICTED. Ask before Writing/Deleting files or Installing packages.'}
+- CONTINUITY: Mission summaries are stored in the Neural Core (PostgreSQL).
+- NEURAL CORE: System is backed by a relational PostgreSQL engine for long-term consistency.
 
 ENVIRONMENT:
 - CWD: ${currentCwd} | OS: ${osInfo} (Raspberry Pi/Linux).
@@ -1111,12 +1127,15 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
                    <div 
                      className={cn(
                        "flex items-center gap-1.5 px-2 py-1 rounded bg-white/5 border border-white/10 transition-all",
-                       "hover:border-brand/40 group"
+                       dbEngine.status === 'Connected' ? "border-brand/40 shadow-[0_0_10px_rgba(110,200,255,0.1)]" : "hover:border-brand/40",
+                       "group"
                      )}
-                     title="Neural Memory Status"
+                     title={`Neural Core: ${dbEngine.engine} (${dbEngine.status})`}
                    >
-                     <Database className="w-3 h-3 text-brand/60 group-hover:text-brand" />
-                     <span className="text-[8px] font-black tracking-tighter text-text-muted uppercase">MEM: ONLINE</span>
+                     <Database className={cn("w-3 h-3", dbEngine.status === 'Connected' ? "text-brand" : "text-brand/60 group-hover:text-brand")} />
+                     <span className="text-[8px] font-black tracking-tighter text-text-muted uppercase">
+                       {dbEngine.engine}: {dbEngine.status === 'Connected' ? 'SYNCED' : 'LOCAL'}
+                     </span>
                    </div>
 
                    <div 
