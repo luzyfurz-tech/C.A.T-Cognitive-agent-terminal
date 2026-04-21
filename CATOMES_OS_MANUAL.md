@@ -1,95 +1,93 @@
-# 🐱 CATOMES OS: Operator Manual & System Description
-**Version 4.25 // Neural-Vision Core**
+# 🐱 CATOMES OS: Complete Systems Integration Manual
+**Version 4.50 // Neural-Vision Core // PostgreSQL Hardened**
 
-## 1. Project Overview
-CATOMES OS (Cognitive Agent Terminal Operating System) is a multi-agent orchestration platform designed for autonomous task execution, web research, software development, and system security. It provides a unified "Cyber-Nordic" interface for interacting with various specialized AI agents that can work independently or collaboratively to complete complex missions.
-
----
-
-## 2. Neural & Visual Subsystems (New)
-
-### 🧠 Persistent Neural Memory
-*   **Protocol**: `[MEM_SAVE]`, `[MEM_LOAD]`
-*   **Function**: The Supervisor uses a dedicated Knowledge Base to store "Lessons Learned" and successful configurations. This prevents repetitive errors across different missions. Memory is persistent across sessions and system reboots.
-
-### 👁️ Visual Feedback Loop (Sight)
-*   **Protocol**: `[VISION_QA]`
-*   **Function**: The system can now "see" the Live Preview. By triggering a capture, the agent receives a high-resolution frame of the current UI, allowing for visual QA and precision adjustments (spacing, color, layout) that code analysis alone cannot achieve.
-
-### 🛡️ System Guard (Rollback Engine)
-*   **Protocol**: `[SNAPSHOT]`, `[ROLLBACK]`
-*   **Function**: Provides a safety-net for autonomous operations. Before complex code changes or mass deletions, the system creates an immutable state snapshot. If an agent error occurs, the entire project can be reverted to a stable state with a single command.
+## 1. Executive Summary
+CATOMES OS (Cognitive Agent Terminal Operating System) is a high-performance orchestration layer designed for the Raspberry Pi environment. It transforms a standard Linux terminal into an autonomous AI workstation. By utilizing a "Hive Mind" architecture, the system delegates complex missions across specialized cognitive agents, providing a unified interface for web research, full-stack development, and digital security auditing.
 
 ---
 
-## 3. System Architecture (The Agenter)
+## 2. Core Architectural Pillars
 
-The system is divided into specialized "Views", each powered by a custom-prompted agent:
+### 🧠 The Neural Core (Memory & Context)
+The "Brain" of CATOMES OS is powered by a high-availability database layer.
+*   **Infrastructure**: A PostgreSQL 15 container managed via Docker.
+*   **Hybrid Engine**: The system employs a fail-safe hybrid strategy. If the PostgreSQL container is offline, the system automatically transitions to a local **SQLite** engine, ensuring zero downtime.
+*   **Persistent Knowledge**: Unlike standard LLMs, CATOMES OS stores "Mission Summaries." When a task is complete, the Supervisor uses `[MEM_SAVE]` to store lessons learned, API configurations, and successful kodes-patterns for future recall.
 
-### 👤 Supervisor Agent (Command Center)
-*   **Role**: The central coordinator and logic layer.
-*   **Function**: This is where you initiate missions. The Supervisor can delegate tasks to other agents using the `[TRANSFER: agent_id]` protocol.
-*   **Icon**: `Bot` / `Layout`
+### 👁️ Visual Intelligence Subsystem (Sight)
+CATOMES OS is not just text-based; it has visual situational awareness.
+*   **Multimodal Input**: Operators can paste screenshots (`Ctrl+V`) directly into the directive input.
+*   **Vision QA**: Using the `[VISION_QA]` protocol, agents can capture a high-resolution frame of the **Live Preview**. This allows the Coder agent to "see" layout issues, color mismatches, or responsive design flaws in real-time.
 
-### 🌐 Web Research Agent (OllamaWeb)
-*   **Role**: Information retrieval and research.
-*   **Function**: Can browse the web using `[SEARCH]`, fetch page content with `[FETCH]`, and even interact with websites via `[ACTION]`.
-*   **Icons**: `Globe` / `Search`
-
-### 💻 Coding & Webdesign Agent
-*   **Role**: Full-stack developer.
-*   **Function**: Specializes in writing code, building UI components, and managing projects. It can trigger a **Live Preview** of your code directly in the browser.
-*   **Icons**: `Code` / `Layout`
-
-### ⚙️ Hermes (Runtime Engine)
-*   **Role**: Tool calling and execution.
-*   **Function**: The system's "hands". It executes CLI commands, runs scripts, and handles local file manipulations via the `[EXECUTE]` protocol.
-*   **Icons**: `Zap` / `Terminal`
-
-### 🛡️ AEGIS (Security Audit)
-*   **Role**: System integrity and code review.
-*   **Function**: Scans code for vulnerabilities, monitors system logs, and provides security assessments of the current workspace.
-*   **Icons**: `Shield` / `Activity`
-
-### 📊 CATOMES Control (Mission Control)
-*   **Role**: Monitoring and orchestration.
-*   **Function**: A dashboard that shows active missions, pending tasks, and global system logs. It tracks the status of "Catomes" (individual mission units).
-*   **Icons**: `Database` / `Settings`
+### 🛡️ System Guard & Stability
+*   **Atomic Snapshots**: Before executing risky commands (mass deletions, complex migrations), the system triggers a `[SNAPSHOT]`. This creates an immutable state of the current workspace.
+*   **Rollback Protocol**: If an automated update fails or code becomes unstable, the Supervisor can trigger a `[ROLLBACK]`, returning the entire project directory to its last known healthy state.
 
 ---
 
-## 3. UI Components & Features
+## 3. The Agent Hive (Specialized Roles)
 
-### 📁 File Commander (NC-Style)
-*   **Location**: Sidebar (Toggle with the layout icon in the header).
-*   **Function**: A classic dual-pane style file browser.
-*   **Context Locking**: Double-click or select a file to lock it as "Context". This makes the active agent aware of that specific file without you having to upload it manually.
-
-### 🛠️ Header Control Bar
-*   **Model Knowledge Base (i)**: Shows technical details about available AI models.
-*   **Settings (Gear)**: Configure API keys, themes, and Docker settings.
-*   **System Guide (?)**: Opens the integrated FAQ and quick-start manual.
-*   **Refresh**: Re-synchronizes with the AI server.
-*   **Trash**: Clears the current session logs.
+| Agent | Icon | Role | Key Capabilities |
+| :--- | :--- | :--- | :--- |
+| **Supervisor** | `Bot` | Command Center | Orchestration, delegation, long-term memory management. |
+| **Coder** | `Code` | Lead Developer | Full-stack coding, UI/UX design, Live Preview injection. |
+| **OllamaWeb** | `Globe` | Researcher | Live web-scraping, search engine interaction, data retrieval. |
+| **Hermes** | `Zap` | Executioner | CLI execution, script running, Docker management, SSH. |
+| **AEGIS** | `Shield` | Auditor | Code review, vulnerability scanning, system integrity checks. |
 
 ---
 
-## 4. Operational Modes (The Badges)
+## 4. AI Engine & Cloud-Bridge Strategy
 
-In the top header, you see three interactive badges:
+CATOMES OS is designed to be hardware-efficient by utilizing a **Hybrid AI Strategy**. While the core logic resides on your local Raspberry Pi, the heavy "Thinking" is offloaded.
 
-*   **AGENT**: When blue, I act as an autonomous agent (planning and executing). When gray, I act as a standard chatbot.
-*   **AUTO**: When blue, I have **Full Autonomy**. I will write files and run commands without asking for permission. When gray, I will prompt you before every sensitive action.
-*   **FOLLOW**: When green, the UI will automatically switch views to show you what I am doing (e.g., jumping to the code view when I start writing).
+### 🚀 Cloud Ollama Acceleration
+*   **The Bridge**: By using a **Cloud Ollama API Key**, your Pi can connect to external high-performance AI clusters.
+*   **Infinite Hardware**: This allows your Raspberry Pi to run "Heavyweight" models (e.g., Llama 3 70B, Mixtral) that would normally require a high-end AI server.
+*   **Zero-Cost Access**: Operators can set up an **Ollama Cloud Bridge for free**. By obtaining a free API key and connecting it to CATOMES OS, you get the intelligence of a $10,000 AI rig running directly inside your terminal—totally free of charge to run day or night.
+*   **Performance**: Local hardware (Pi) handles the UI, file management, and system execution, while the Cloud Bridge handles the complex reasoning.
+
+---
+
+## 5. Technical Specifications (Languages & Tools)
+
+CATOMES OS supports a massive array of production-grade technologies, optimized for the ARM/Raspberry Pi architecture:
+
+*   **Web Stack**: HTML5, CSS3, Tailwind CSS (Native support), JS (ES6+), TypeScript, React, Next.js.
+*   **Backend & Systems**: Node.js, Python 3.11+, Go, Rust, **C++ (gcc/g++)**.
+*   **Data Layers**: PostgreSQL (Main), SQLite (Fallback), Prisma ORM, Redis (Optional).
+*   **DevOps**: Docker, Docker-Compose, Makefiles, **CMake**, Git.
 
 ---
 
-## 5. Getting Started
-1.  **Boot Up**: Wait for the Neural Link to establish.
-2.  **State your Mission**: In the main chat, tell the Supervisor what you want to achieve (e.g., "Build a landing page for my bakery").
-3.  **Active Monitoring**: Watch the **FOLLOW** mode switch you between agents as they collaborate.
-4.  **Review**: Use the **Webdesign View** to see live previews of your work.
-5.  **Audit**: Use **AEGIS** to ensure your project is secure before finishing.
+## 6. UI Operational Guide
+
+### 📂 Integrated File Commander
+The left sidebar houses a context-aware file browser. 
+*   **NC-Style**: Dual-pane inspiration for fast navigation.
+*   **Context Locking**: Double-clicking a file "locks" it into the AI's short-term memory. The next prompt you send will automatically include the content of that file as context.
+
+### 🖥️ Real-Time Telemetry (Bio-Metrics)
+The header provides a live medical report of your hardware:
+*   **TEMP**: CPU temperature status (Critical for Pi lifespan).
+*   **RAM**: Memory saturation report.
+*   **LOAD**: System burden average.
+*   **UPTIME**: System stability counter.
+
+### 🎮 Control Badges (The Autonomy Switches)
+*   **[AGENT]**: Enables the "Thinking" cycle where the AI plans its own steps.
+*   **[AUTO]**: **Full Autonomy Mode**. When active, the system installs packages, writes files, and deletes directories without asking for manual confirmation.
+*   **[FOLLOW]**: Auto-focuses the UI on the agent currently performing work.
 
 ---
-**NEURO-LINK ESTABLISHED // SYSTEM READY**
+
+## 7. Standard Mission Workflow
+1.  **Directive**: Operator provides a goal (e.g., "Build a telemetry dashboard for my solar panels").
+2.  **Research**: **OllamaWeb** scans for API documentation or design inspiration.
+3.  **Handoff**: Supervisor transfers the mission to **Coder**.
+4.  **Codegen & Preview**: Coder writes the files to `web_design_workspace/projects/` and starts the **Live Preview**.
+5.  **Audit**: **AEGIS** scans the generated code for security leaks.
+6.  **Summary**: Supervisor saves the project DNA to the **Neural Core** and reports "Mission Accomplished."
+
+---
+**NEURO-LINK: OPTIMIZED // POSTGRES: SYNCED // SYSTEMS: GO**

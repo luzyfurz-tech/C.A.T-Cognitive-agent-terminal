@@ -255,6 +255,12 @@ RULES:
 
 ENVIRONMENT: CWD=${currentCwd} | OS=${osInfo} (Raspberry Pi/Linux).
 
+LANGUAGES & COMPILERS:
+- Web: HTML5, CSS3, Tailwind, JavaScript (ES6+), TypeScript, React, Next.js.
+- Backend: Node.js (Express), Python (FastAPI/Flask), Go, Rust, C++ (g++).
+- Database: PostgreSQL (Client install: 'npm i pg'), SQLite, Prisma ORM.
+- Systems: Bash, Docker, Docker-Compose, Makefile, CMake.
+
 MODEL CAPABILITIES:
 ${models.map(m => `- ${m.name}: ${JSON.stringify((modelsInfo as any)[m.name]?.capabilities || {})}`).join('\n')}`;
 

@@ -53,9 +53,38 @@ if (!existsSync(PROJECTS_JSON_PATH)) {
   writeFileSync(PROJECTS_JSON_PATH, JSON.stringify({ active_project: null, projects: [] }, null, 2));
 }
 
-// Ensure catomes.json exists
-if (!existsSync(CATOMES_JSON_PATH)) {
-  writeFileSync(CATOMES_JSON_PATH, JSON.stringify({ active_mission: null, catomes: [] }, null, 2));
+// Ensure catomes.json exists with starter data
+if (!existsSync(CATOMES_JSON_PATH) || (readFileSync(CATOMES_JSON_PATH, 'utf-8').trim() === '{"active_mission":null,"catomes":[]}')) {
+  const starterData = {
+    active_mission: "SYS-INIT-001",
+    catomes: [
+      {
+        id: "sys-brain-001",
+        mission_id: "SYS-INIT-001",
+        type: "compute",
+        priority: "critical",
+        description: "Neural Core Integrity Check: Verifying PostgreSQL-to-SQLite sync bypass.",
+        agent: "supervisor",
+        status: "success",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        logs: [{ t: new Date().toISOString(), m: "Neural Core Sync Verified. Postgres is Primary." }]
+      },
+      {
+        id: "sys-therm-002",
+        mission_id: "SYS-INIT-001",
+        type: "system",
+        priority: "high",
+        description: "Bio-Shield Scan: Monitoring Raspberry Pi thermal envelopes.",
+        agent: "hermes",
+        status: "running",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        logs: [{ t: new Date().toISOString(), m: "Scanning /sys/class/thermal/thermal_zone0..." }]
+      }
+    ]
+  };
+  writeFileSync(CATOMES_JSON_PATH, JSON.stringify(starterData, null, 2));
 }
 
 // Ensure audit.json exists
@@ -198,13 +227,32 @@ async function startServer() {
   });
 
   // Health Check
-  app.get("/api/health", (req, res) => {
+  app.get("/api/health", async (req, res) => {
+    let cpuTemp = "N/A";
+    try {
+      if (os.platform() === 'linux') {
+        const temp = await fs.readFile('/sys/class/thermal/thermal_zone0/temp', 'utf8');
+        cpuTemp = (parseInt(temp) / 1000).toFixed(1) + '°C';
+      }
+    } catch (e) {}
+
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const memUsage = (((totalMem - freeMem) / totalMem) * 100).toFixed(1) + '%';
+    const loadAvg = os.loadavg()[0].toFixed(2);
+
     res.json({ 
       status: "ok",
       os: os.platform(),
       arch: os.arch(),
       release: os.release(),
-      cwd: process.cwd()
+      cwd: process.cwd(),
+      metrics: {
+        temp: cpuTemp,
+        mem: memUsage,
+        load: loadAvg,
+        uptime: (os.uptime() / 3600).toFixed(1) + 'h'
+      }
     });
   });
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Key, Settings, Loader2, RefreshCw, Trash2, ChevronDown, X, Globe, Shield, Terminal, Play, CheckCircle2, AlertCircle, Layout, Maximize2, Minimize2, Box, Search, Info, Brain, ChevronRight, Zap, FileText, Database, Code, HelpCircle, Paperclip } from 'lucide-react';
+import { Send, Bot, User, Key, Settings, Loader2, RefreshCw, Trash2, ChevronDown, X, Globe, Shield, Terminal, Play, CheckCircle2, AlertCircle, Layout, Maximize2, Minimize2, Box, Search, Info, Brain, ChevronRight, Zap, FileText, Database, Code, HelpCircle, Paperclip, Cpu, Thermometer, Activity, Camera } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -112,6 +112,7 @@ export default function App() {
   const [visionFrame, setVisionFrame] = useState<string | null>(null);
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [dbEngine, setDbEngine] = useState<{ status: string; engine: string }>({ status: 'Disconnected', engine: 'SQLite' });
+  const [sysMetrics, setSysMetrics] = useState<{ temp: string; mem: string; load: string; uptime: string }>({ temp: '0°C', mem: '0%', load: '0.00', uptime: '0h' });
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -444,15 +445,23 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    const checkPg = async () => {
+    const fetchStatus = async () => {
       try {
-        const res = await fetch('/api/system/postgres');
-        const data = await res.json();
-        setDbEngine(data);
+        // Check Postgres
+        const pgRes = await fetch('/api/system/postgres');
+        const pgData = await pgRes.json();
+        setDbEngine(pgData);
+
+        // Check Metrics via Health
+        const healthRes = await fetch('/api/health');
+        const healthData = await healthRes.json();
+        if (healthData.metrics) {
+          setSysMetrics(healthData.metrics);
+        }
       } catch (e) {}
     };
-    checkPg();
-    const interval = setInterval(checkPg, 10000);
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -549,6 +558,28 @@ export default function App() {
         };
         reader.readAsDataURL(file);
       }
+    }
+  };
+
+  const takeSnapshot = async () => {
+    if (!apiKey) return;
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/system/snapshot', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}` }
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Snapshot failed');
+      
+      setMessages(prev => [...prev, { 
+        role: 'system', 
+        content: `[SYSTEM GUARD]: Manual Snapshot created: ${data.snapshotId}. You can now proceed with risky changes. Rollback is available via Supervisor.` 
+      }]);
+    } catch (err: any) {
+      setError(`Snapshot Error: ${err.message}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -668,6 +699,7 @@ EFFICIENCY:
 
 ENVIRONMENT:
 - CWD: ${currentCwd} | OS: ${osInfo} (Raspberry Pi/Linux).
+- BIO-METRICS: Temp: ${sysMetrics.temp} | RAM: ${sysMetrics.mem} | Load: ${sysMetrics.load} | Uptime: ${sysMetrics.uptime}.
 - REF FILE: ${selectedFile ? selectedFile.path : 'None'}. (Do NOT assume this directory is the project root for new projects).
 
 MODEL CAPABILITIES:
@@ -1021,6 +1053,16 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
               <Database className="w-5 h-5" />
               {currentView === 'dashboard' && <motion.div layoutId="nav-glow" className="absolute -left-[1px] top-1/4 bottom-1/4 w-[2px] bg-brand rounded-r-full" />}
             </button>
+
+            <div className="flex-1" />
+
+            <button
+              onClick={takeSnapshot}
+              className="p-3 rounded-xl transition-all duration-300 text-text-muted hover:text-emerald-400 hover:bg-emerald-400/5 mb-2 group"
+              title="Take System Snapshot"
+            >
+              <Camera className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            </button>
           </div>
         </nav>
 
@@ -1136,6 +1178,21 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
                      <span className="text-[8px] font-black tracking-tighter text-text-muted uppercase">
                        {dbEngine.engine}: {dbEngine.status === 'Connected' ? 'SYNCED' : 'LOCAL'}
                      </span>
+                   </div>
+
+                   <div className="flex items-center gap-1 ml-1">
+                     <div className="flex items-center gap-1 px-1.5 py-1 rounded bg-white/5 border border-white/5" title="CPU Temperature">
+                       <Thermometer className="w-2.5 h-2.5 text-orange-400/70" />
+                       <span className="text-[7px] font-mono font-bold text-text-muted">{sysMetrics.temp}</span>
+                     </div>
+                     <div className="flex items-center gap-1 px-1.5 py-1 rounded bg-white/5 border border-white/5" title="Memory Usage">
+                       <Activity className="w-2.5 h-2.5 text-emerald-400/70" />
+                       <span className="text-[7px] font-mono font-bold text-text-muted">{sysMetrics.mem}</span>
+                     </div>
+                     <div className="flex items-center gap-1 px-1.5 py-1 rounded bg-white/5 border border-white/5" title="CPU Load">
+                       <Cpu className="w-2.5 h-2.5 text-brand/70" />
+                       <span className="text-[7px] font-mono font-bold text-text-muted">{sysMetrics.load}</span>
+                     </div>
                    </div>
 
                    <div 
