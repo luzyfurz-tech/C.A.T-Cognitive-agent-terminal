@@ -6,3 +6,10 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# CATOMES Workspace State
+web_design_workspace/catomes.json
+web_design_workspace/projects.json
+web_design_workspace/logs/
+web_design_workspace/temp/
+web_design_workspace/screenshots/
