@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Key, Settings, Loader2, RefreshCw, Trash2, ChevronDown, X, Globe, Shield, Terminal, Play, CheckCircle2, AlertCircle, Layout, Maximize2, Minimize2, Box, Search, Info, Brain, ChevronRight, Zap, FileText, Database, Code, HelpCircle } from 'lucide-react';
+import { Send, Bot, User, Key, Settings, Loader2, RefreshCw, Trash2, ChevronDown, X, Globe, Shield, Terminal, Play, CheckCircle2, AlertCircle, Layout, Maximize2, Minimize2, Box, Search, Info, Brain, ChevronRight, Zap, FileText, Database, Code, HelpCircle, Paperclip } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -110,8 +110,10 @@ export default function App() {
   const [isBooting, setIsBooting] = useState(true);
   const [catomeStore, setCatomeStore] = useState<CatomeStore>({ active_mission: null, catomes: [] });
   const [visionFrame, setVisionFrame] = useState<string | null>(null);
+  const [pendingImages, setPendingImages] = useState<string[]>([]);
   
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const triggeredTransfers = useRef<Set<number>>(new Set());
 
   const ThinkingBlock = ({ thinking }: { thinking: string }) => {
@@ -479,16 +481,78 @@ export default function App() {
     }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !apiKey) return;
+
+    setIsLoading(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const content = event.target?.result as string;
+        const isBase64 = true;
+        const base64Content = content.split(',')[1];
+
+        const res = await fetch('/api/files/upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            filename: file.name,
+            content: base64Content,
+            isBase64,
+            targetDir: currentCwd || undefined
+          })
+        });
+
+        if (!res.ok) throw new Error('Upload failed');
+        
+        const data = await res.json();
+        sendMessage(`[SYSTEM]: File attached and uploaded to workspace: ${file.name}. Path: ${data.path}. (The Supervisor has been notified of its presence).`);
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      setError(`Upload Error: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (!file) continue;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const base64 = event.target?.result as string;
+          setPendingImages(prev => [...prev, base64]);
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  };
+
   const sendMessage = async (content: string) => {
-    if (!content.trim() || !viewModels.chat || !apiKey || isLoading) return;
+    if (!content.trim() && pendingImages.length === 0) return;
+    if (!viewModels.chat || !apiKey || isLoading) return;
+
+    const allImages = [...pendingImages];
+    if (visionFrame) allImages.push(visionFrame);
 
     const userMessage: Message = { 
       role: 'user', 
-      content,
-      images: visionFrame ? [visionFrame.split(',')[1] || visionFrame] : undefined
+      content: content || (allImages.length > 0 ? "[Visual Transmission Attached]" : ""),
+      images: allImages.length > 0 ? allImages.map(img => img.split(',')[1] || img) : undefined
     };
     
-    // Clear vision frame after use
+    // Clear states
+    setPendingImages([]);
     if (visionFrame) setVisionFrame(null);
     
     // Log user directive and set supervisor to working
@@ -1401,20 +1465,51 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
 
         {/* Input Area */}
         <div className="flex-none p-6 border-t border-border bg-surface/80 backdrop-blur-xl">
+          {pendingImages.length > 0 && (
+            <div className="flex flex-wrap gap-3 mb-4 max-w-4xl mx-auto w-full">
+              {pendingImages.map((img, i) => (
+                <div key={i} className="relative group w-20 h-20 rounded-lg overflow-hidden border border-brand/30 shadow-lg">
+                  <img src={img} alt="Paste preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <button 
+                    onClick={() => setPendingImages(prev => prev.filter((_, idx) => idx !== i))}
+                    className="absolute top-1 right-1 p-1 bg-black/60 rounded-md text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="flex gap-3 max-w-4xl mx-auto w-full">
-            <div className="relative flex-1">
+            <div className="relative flex-1 flex gap-2">
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileUpload} 
+                className="hidden" 
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!apiKey || isLoading}
+                className="px-4 py-4 bg-bg-light border border-border rounded-xl text-text-muted hover:text-brand hover:border-brand/40 transition-all flex items-center justify-center"
+                title="Attach file to mission"
+              >
+                <Paperclip className="w-5 h-5" />
+              </button>
               <input
                 type="text"
                 value={input}
+                onPaste={handlePaste}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={apiKey ? "Transmit data..." : "Awaiting Authorization Key"}
+                placeholder={apiKey ? (pendingImages.length > 0 ? "Add meta-data to images..." : "Transmit data...") : "Awaiting Authorization Key"}
                 disabled={!apiKey || isLoading}
                 className="w-full px-5 py-4 bg-bg-light border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 text-sm text-text-main placeholder:text-text-muted transition-all"
               />
             </div>
             <button
               type="submit"
-              disabled={!input.trim() || !apiKey || isLoading || !viewModels.chat}
+              disabled={(!input.trim() && pendingImages.length === 0) || !apiKey || isLoading || !viewModels.chat}
               className="px-8 py-4 btn-primary uppercase tracking-widest text-xs rounded-xl disabled:opacity-20 disabled:grayscale flex items-center gap-3"
             >
               {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}

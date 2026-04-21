@@ -564,6 +564,30 @@ async function startServer() {
     }
   });
 
+  // File Browser API: Upload
+  app.post("/api/files/upload", async (req, res) => {
+    const { filename, content, isBase64, targetDir } = req.body;
+    const apiKey = req.headers.authorization?.split(" ")[1];
+    if (!apiKey) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+      const uploadDir = targetDir ? path.resolve(targetDir) : TEMP_DIR;
+      if (!existsSync(uploadDir)) await fs.mkdir(uploadDir, { recursive: true });
+      
+      const targetPath = path.join(uploadDir, filename);
+      if (isBase64) {
+        await fs.writeFile(targetPath, Buffer.from(content, 'base64'));
+      } else {
+        await fs.writeFile(targetPath, content, "utf-8");
+      }
+
+      await logAudit(`File Uploaded: ${filename}`, "Success", `Target: ${targetPath}`, "", "file_upload");
+      res.json({ status: "Success", path: targetPath });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Projects API: Create new project
   app.post("/api/projects/create", async (req, res) => {
     const { name, description, stack } = req.body;
