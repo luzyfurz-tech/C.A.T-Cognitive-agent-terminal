@@ -101,12 +101,6 @@
     "agents": ["chat"],
     "capabilities": { "reasoning": 6, "coding": 4, "vision": 0, "tools": 0, "speed": 8, "context": 6 }
   },
-  "gemini-3-flash-preview": {
-    "description": "hurtig frontier-intelligens til lav latency og høj throughput",
-    "tags": ["vision", "tools", "thinking", "cloud"],
-    "agents": ["chat", "ollamaWeb"],
-    "capabilities": { "reasoning": 8, "coding": 6, "vision": 8, "tools": 7, "speed": 9, "context": 7 }
-  },
   "glm-4.7": {
     "description": "avanceret coding-fokuseret model med stærk reasoning",
     "tags": ["tools", "thinking", "cloud"],

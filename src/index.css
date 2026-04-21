@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500&family=Orbitron:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500&family=Orbitron:wght@400;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
@@ -6,6 +6,7 @@
   --font-serif: "Cormorant Garamond", serif;
   --font-mono: "JetBrains Mono", monospace;
   --font-orbitron: "Orbitron", sans-serif;
+  --font-sans: "Space Grotesk", sans-serif;
   --color-brand: var(--brand-color, #6EC8FF);
   --color-bg-light: var(--bg-color, #0A0F1A);
   --color-surface: var(--surface-color, #101A2A);
@@ -100,6 +101,21 @@
 
   .panel-active {
     @apply border-[#4FE3D4] shadow-[0_0_10px_rgba(79,227,212,0.2)];
+  }
+
+  .form-input {
+    @apply w-full bg-[#1A1D26] border border-white/10 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#F0712F]/50 transition-all font-mono placeholder:text-white/10;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-white/5 rounded-full hover:bg-white/10 transition-colors;
   }
 }
 

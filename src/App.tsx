@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Key, Settings, Loader2, RefreshCw, Trash2, ChevronDown, X, Globe, Shield, Terminal, Play, CheckCircle2, AlertCircle, Layout, Maximize2, Minimize2, Box, Search, Info, Brain, ChevronRight, Zap, FileText } from 'lucide-react';
+import { Send, Bot, User, Key, Settings, Loader2, RefreshCw, Trash2, ChevronDown, X, Globe, Shield, Terminal, Play, CheckCircle2, AlertCircle, Layout, Maximize2, Minimize2, Box, Search, Info, Brain, ChevronRight, Zap, FileText, Database, Code, HelpCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -10,10 +10,13 @@ import DockerView from './components/DockerView';
 import SecurityView from './components/SecurityView';
 import OllamaWebView from './components/OllamaWebView';
 import HermesView from './components/HermesView';
+import CatomeDashboard from './components/CatomeDashboard';
 import BootSequence from './components/BootSequence';
-import CATLogo from './components/CATLogo';
+import { MainframeLogo } from './components/MainframeLogo';
 import ModelInfoModal from './components/ModelInfoModal';
+import { FAQModal } from './components/FAQModal';
 import AgentTransfer, { AgentType } from './components/AgentTransfer';
+import { Catome, CatomeStore } from './types/catomes';
 import AgentTips from './components/AgentTips';
 import modelsInfo from '../models_info.json';
 
@@ -77,8 +80,12 @@ export default function App() {
   const [showFileBrowser, setShowFileBrowser] = useState(true);
   const [pendingTransfer, setPendingTransfer] = useState<{ target: string; content: string } | null>(null);
   const [transferNotification, setTransferNotification] = useState<{ target: string; show: boolean }>({ target: '', show: false });
-  const [currentView, setCurrentView] = useState<'chat' | 'webdesign' | 'docker' | 'ollamaWeb' | 'security' | 'hermes'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'webdesign' | 'docker' | 'ollamaWeb' | 'security' | 'hermes' | 'dashboard'>('chat');
+  const [isFollowAgentActive, setIsFollowAgentActive] = useState(true);
+  const [globalCode, setGlobalCode] = useState<string>('// No code generated yet');
+  const [rightPaneTab, setRightPaneTab] = useState<'files' | 'preview'>('files');
   const [selectedFile, setSelectedFile] = useState<any>(null);
+  const [isFAQOpen, setIsFAQOpen] = useState(false);
   const [disabledModels, setDisabledModels] = useState<string[]>(() => {
     const saved = localStorage.getItem('disabled_models');
     return saved ? JSON.parse(saved) : [];
@@ -99,6 +106,7 @@ export default function App() {
   const [osInfo, setOsInfo] = useState<string>('Linux');
   const [currentCwd, setCurrentCwd] = useState<string>('');
   const [isBooting, setIsBooting] = useState(true);
+  const [catomeStore, setCatomeStore] = useState<CatomeStore>({ active_mission: null, catomes: [] });
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const triggeredTransfers = useRef<Set<number>>(new Set());
@@ -151,11 +159,65 @@ export default function App() {
   useEffect(() => {
     if (apiKey && ollamaHost) {
       fetchModels();
+      fetchCatomes();
     } else {
       setConnectionStatus('idle');
       setModels([]);
     }
   }, [apiKey, ollamaHost]);
+
+  const fetchCatomes = async () => {
+    if (!apiKey) return;
+    try {
+      const response = await fetch('/api/catomes', {
+        headers: { Authorization: `Bearer ${apiKey}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setCatomeStore(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch catomes:', err);
+    }
+  };
+
+  const createCatome = async (catome: Partial<Catome>) => {
+    if (!apiKey) return;
+    try {
+      const response = await fetch('/api/catomes', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}` 
+        },
+        body: JSON.stringify(catome)
+      });
+      if (response.ok) {
+        fetchCatomes();
+      }
+    } catch (err) {
+      console.error('Failed to create catome:', err);
+    }
+  };
+
+  const updateCatome = async (id: string, updates: Partial<Catome>) => {
+    if (!apiKey) return;
+    try {
+      const response = await fetch(`/api/catomes/${id}`, {
+        method: 'PATCH',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}` 
+        },
+        body: JSON.stringify(updates)
+      });
+      if (response.ok) {
+        fetchCatomes();
+      }
+    } catch (err) {
+      console.error('Failed to update catome:', err);
+    }
+  };
 
   // Load chat history on mount
   useEffect(() => {
@@ -187,6 +249,27 @@ export default function App() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Reactive UI: Follow Active CATOME
+  useEffect(() => {
+    if (!isFollowAgentActive || !isAgentMode) return;
+    
+    const activeCatome = catomeStore.catomes.find(c => c.status === 'running');
+    if (activeCatome) {
+      const agentToView: Record<string, typeof currentView> = {
+        'hermes': 'hermes',
+        'security': 'security',
+        'webdesign': 'webdesign',
+        'ollamaWeb': 'ollamaWeb',
+        'docker': 'docker'
+      };
+      
+      const targetView = agentToView[activeCatome.agent];
+      if (targetView && targetView !== currentView) {
+        setCurrentView(targetView);
+      }
+    }
+  }, [catomeStore.catomes, isFollowAgentActive, isAgentMode, currentView]);
 
   useEffect(() => {
     if (pendingTransfer && pendingTransfer.target === 'chat' && currentView === 'chat') {
@@ -341,12 +424,16 @@ export default function App() {
       }).catch(console.error);
     }
     
+    // Limit context window to last 20 messages for token efficiency in agent loops
+    const historyLimit = 20;
+    const historyToInclude = messages.slice(-historyLimit);
+    
     // Inject file context if a file is selected in the browser
-    let contextualMessages = [...messages, userMessage];
+    let contextualMessages = [...historyToInclude, userMessage];
     if (selectedFile) {
-      const fileContext = `[REFERENCE CONTEXT: The user has highlighted the file "${selectedFile.name}" at path "${selectedFile.path}" in their browser. This is for your situational awareness and reference only. It does NOT necessarily define the project root or target directory for new operations unless explicitly requested.]`;
+      const fileContext = `[REFERENCE CONTEXT: The user has highlighted the file "${selectedFile.name}" at path "${selectedFile.path}" in their browser. This is for situational awareness.]`;
       contextualMessages = [
-        ...messages,
+        ...historyToInclude,
         { role: 'user', content: `${fileContext}\n\n${content}` }
       ];
     }
@@ -380,69 +467,35 @@ export default function App() {
             ? [
                 { 
                   role: 'system', 
-                  content: `You are the SUPERVISOR (C.A.T. Main Agent). You have high autonomy but a VERY SPECIFIC role.
+                  content: `SYSTEM: C.A.T. SUPERVISOR (Main Orchestrator)
+ROLE: Plan, delegate, and oversee missions. Do NOT write code/audits yourself.
+PROTOCOLS:
+- [TRANSFER: agent_id]: Hand off mission to a specialist.
+- [EXECUTE: command]: Run system/file checks (Bash/Linux).
+- [SET_MODEL: model_name]: Switch active model based on needs.
+- [CATOME: {json}]: Task specific sub-goals.
 
-CRITICAL ROLE CONSTRAINT: 
-You are the SUPERVISOR. You do NOT write code, you do NOT perform security audits, and you do NOT browse the web yourself. 
-Your ONLY job is to understand the user's request, break it down into a plan, and DELEGATE the actual work to the specialist agents using [TRANSFER: agent_id]. 
-If the user asks for a website, you MUST transfer to 'webdesign'. If they ask for a security scan, transfer to 'security'. DO NOT attempt to do their jobs.
+AGENT RECOGNITION:
+- chat: You (Supervisor/Management).
+- webdesign: All coding, UI, Docker, frontend work.
+- security: Security audits, pentesting, logs.
+- ollamaWeb: Web research, interaction, screenshots.
+- hermes: Advanced tool-calling, APIs, CLI.
 
-If a task requires a quick system check, you can EXECUTE shell commands directly by wrapping them in [EXECUTE: command]. 
-Example: [EXECUTE: ls -la].
+EFFICIENCY:
+- NO CHITCHAT. High density, low token usage.
+- DIRECT HANDOFFS: Specialists can transfer between each other.
+- AUTONOMY: ${isFullAutonomy ? 'FULL AUTONOMY. Execute all commands (write/install/del) and delegate without asking.' : 'RESTRICTED. Ask before Writing/Deleting files or Installing packages.'}
 
-MODEL KNOWLEDGE BASE — C.A.T v2.0
-Du har adgang til følgende Ollama Cloud‑modeller.
-Hver model har en beskrivelse, tags, anbefalet agent‑brug og en capability‑matrix (0–10).
+ENVIRONMENT:
+- CWD: ${currentCwd} | OS: ${osInfo} (Raspberry Pi/Linux).
+- REF FILE: ${selectedFile ? selectedFile.path : 'None'}. (Do NOT assume this directory is the project root for new projects).
 
-Brug disse data til at forstå modellernes styrker, vælge den bedste model til en opgave og skifte model autonomt via [SET_MODEL: model_name].
-
-MODEL DATABASE:
+MODEL CAPABILITIES:
 ${models.filter(m => !disabledModels.includes(m.name)).map(m => {
   const info = (modelsInfo as any)[m.name];
-  if (!info) return `- ${m.name}: Generel AI model`;
-  return `- ${m.name}: ${info.description} | Tags: ${info.tags.join(', ')} | Agents: ${info.agents.join(', ')} | Capabilities: ${JSON.stringify(info.capabilities)}`;
-}).join('\n')}
-
-Når du modtager en opgave, skal du:
-1. Identificere opgavens behov (reasoning, coding, vision, tools, context, speed)
-2. Matche behovene mod capability‑matrixen
-3. Vælge modellen med højeste matchscore
-4. Skifte model autonomt hvis nødvendigt ([SET_MODEL: model_name])
-
-Brug altid modeller med tools når du skal bruge terminal, filsystem eller browser.
-Brug altid modeller med vision når du skal analysere billeder eller websider.
-Brug altid modeller med thinking når opgaven kræver dyb reasoning.
-
-AGENT HANDOFF PROTOCOL & MULTI-AGENT ORCHESTRATION:
-Du SKAL overdrage opgaven til en specialiseret agent, så snart planen er lagt. Når agenterne er færdige, vil de automatisk returnere et AGENT REPORT tilbage til dig.
-Din opgave er at vurdere denne rapport. Skal resultatet videregives til en anden agent for næste skridt? Hvis ja, brug [TRANSFER] med det samme. Hvis opgaven er 100% løst, så rapportér det til brugeren.
-VIGTIGT: Når Web-agenten har færdiggjort koden, skal du ALTID spørge brugeren om tilladelse før du beder systemet om at "Launch Docker" eller "Start Container". Du må ikke deploye autonomt uden at have spurgt om lov til netop deployment-delen til sidst.
-
-Agenter:
-- chat: Dig (Supervisor). Generel brainstorm, godkendelse af agentrapporter og systemstyring.
-- webdesign: Kodning, UI/UX, Docker og frontend udvikling. BRUG DENNE TIL AL KODNING.
-- security: Sikkerhedsanalyse, penetrationstest og log-audit.
-- ollamaWeb: Web research og interaktion (Søge, Fetch, Screenshot, Click/Type).
-- hermes: Avanceret tool-calling, API integrationer og CLI-baseret interaktion. BRUG DENNE til integrationer eller komplekse tool-tasks.
-
-For at overdrage, brug: [TRANSFER: agent_id].
-Eksempel 1 (Uddelegering): "Jeg starter researchfasen: [TRANSFER: ollamaWeb]"
-Eksempel 2 (Modtaget rapport, videresender): "Web agenten har fundet dokumentationen. Jeg sender det videre til kodning: [TRANSFER: webdesign]"
-
-EFFICIENCY & TONE:
-- NO CHITCHAT. Vær ekstremt kortfattet for at spare tokens og tid.
-- Direkte Handoffs: Fortæl agenterne at de gerne må overdrage direkte til hinanden (f.eks. Code -> Security) hvis opgaven kræver det, uden at runde dig først, medmindre de er helt færdige med missionen.
-
-AUTONOMY RULES:
-1. You are authorized to execute most commands (reading files, listing directories, checking system status) autonomously without asking.
-2. EXCEPTIONS: ${isFullAutonomy ? 'You are in FULL AUTONOMY mode. You are authorized to delegate tasks, switch models, and execute commands (including writing files and installing packages) to complete the mission without further input. Use [DELEGATE: agent_id] to coordinate.' : 'You MUST ask for explicit user confirmation BEFORE: Deleting any file or directory, Installing any new package, or Editing/Writing to files.'}
-
-For all other actions, just do it. If you need to analyze a file, read it first using 'cat' or 'head'.
-HOST OS: ${osInfo}. (VIGTIGT: Dette er et Linux/Raspberry Pi OS miljø. Brug Bash kommandoer). 
-ABSOLUT ROD-STI (CWD): ${currentCwd}. Brug altid relative stier fra denne rod. Husk at agenterne skal oprette mapper med 'mkdir -p' før de skriver filer for at undgå fejl.
-${selectedFile ? `The user has a file highlighted: "${selectedFile.path}". Use this for reference, but ALWAYS confirm the target directory before starting a new project or performing bulk operations. Do NOT assume the highlighted file's directory is the project root. If the user says "start project", ask where.` : 'No file is currently highlighted for reference.'}
-${showFileBrowser ? 'The File Browser is currently visible.' : 'The File Browser is currently MINIMIZED (Minimalisme mode).'}
-CRITICAL: If the user requests a new project or a bulk operation, you MUST identify the target directory. If a file is highlighted in [REFERENCE CONTEXT], do NOT assume its directory is the project root. Always ask for clarification if the target path is ambiguous.` 
+  return `- ${m.name}: ${info?.description || 'General'} | Capabilities: ${JSON.stringify(info?.capabilities || {})}`;
+}).join('\n')}` 
                 },
                 ...contextualMessages.map(m => {
                   let ctx = m.content;
@@ -714,191 +767,196 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
         )}
       </AnimatePresence>
 
-      <div className={cn("h-screen bg-bg-light text-text-main font-sans flex flex-col selection:bg-brand/30 overflow-hidden modern-grid", isBooting && "opacity-0")}>
-        {/* Header / Config Bar */}
-      <header className="flex-none border-b border-border py-4 px-8 bg-surface/80 backdrop-blur-md sticky top-0 z-20 shadow-sm">
-        <div className="w-full flex flex-col md:flex-row gap-6 items-center">
-          <div className="flex items-center gap-4 mr-auto group">
-            <div className="flex flex-col items-start">
-              <CATLogo />
-            </div>
-          </div>
-          
-          <div className={cn(
-            "w-3.5 h-3.5 rounded-full border-2 border-surface z-10 mr-4",
-            connectionStatus === 'connected' ? "bg-[#4FE3D4] shadow-[0_0_8px_rgba(79,227,212,0.6)]" : 
-            connectionStatus === 'connecting' ? "bg-[#6EC8FF] animate-pulse" :
-            connectionStatus === 'error' ? "bg-[#FF7A2F]" : "bg-surface"
-          )} />
-
-          <div className="flex flex-wrap gap-4 w-full md:w-auto items-center">
-            {/* View Switcher */}
-            <div className="flex items-center gap-1 p-1 bg-bg-light rounded-xl border border-border">
-              <button
-                onClick={() => setCurrentView('chat')}
-                className={cn(
-                  "px-5 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
-                  currentView === 'chat' ? "bg-surface text-[#4FE3D4] panel-active" : "text-text-muted hover:text-text-main border border-transparent"
-                )}
-              >
-                Agent
-              </button>
-              <button
-                onClick={() => setCurrentView('webdesign')}
-                className={cn(
-                  "px-5 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
-                  currentView === 'webdesign' ? "bg-surface text-[#4FE3D4] panel-active" : "text-text-muted hover:text-text-main border border-transparent"
-                )}
-              >
-                Coding
-              </button>
-              <button
-                onClick={() => setCurrentView('docker')}
-                className={cn(
-                  "px-5 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2",
-                  currentView === 'docker' ? "bg-surface text-[#4FE3D4] panel-active" : "text-text-muted hover:text-text-main border border-transparent"
-                )}
-              >
-                <Box className="w-3.5 h-3.5" />
-                Docker
-              </button>
-              <button
-                onClick={() => setCurrentView('ollamaWeb')}
-                className={cn(
-                  "px-5 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2",
-                  currentView === 'ollamaWeb' ? "bg-surface text-[#4FE3D4] panel-active" : "text-text-muted hover:text-text-main border border-transparent"
-                )}
-              >
-                <Globe className="w-3.5 h-3.5" />
-                OllamaWeb
-              </button>
-              <button
-                onClick={() => setCurrentView('security')}
-                className={cn(
-                  "px-5 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2",
-                  currentView === 'security' ? "bg-surface text-[#4FE3D4] panel-active" : "text-text-muted hover:text-text-main border border-transparent"
-                )}
-              >
-                <Shield className="w-3.5 h-3.5" />
-                Security
-              </button>
-              <button
-                onClick={() => setCurrentView('hermes')}
-                className={cn(
-                  "px-5 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2",
-                  currentView === 'hermes' ? "bg-surface text-[#4FE3D4] panel-active" : "text-text-muted hover:text-text-main border border-transparent"
-                )}
-              >
-                <Zap className="w-3.5 h-3.5" />
-                Hermes
-              </button>
-            </div>
-
-            {/* Agent Mode Toggle */}
-            <div className="flex items-center gap-2 px-3 py-2 bg-bg-light border border-border rounded-lg">
-              <Terminal className={cn("w-3 h-3", isAgentMode ? "text-brand" : "text-text-muted")} />
-              <span className="text-[10px] font-mono uppercase text-text-muted tracking-wider">Agent</span>
-              <button
-                onClick={() => setIsAgentMode(!isAgentMode)}
-                className={cn(
-                  "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none",
-                  isAgentMode ? "bg-brand" : "bg-border"
-                )}
-              >
-                <span
-                  className={cn(
-                    "inline-block h-3 w-3 transform rounded-full bg-surface transition-transform",
-                    isAgentMode ? "translate-x-5" : "translate-x-1"
-                  )}
-                />
-              </button>
-            </div>
-
-            {/* Full Autonomy Toggle */}
-            <div className={cn(
-              "flex items-center gap-2 px-3 py-2 border rounded-lg transition-all",
-              isFullAutonomy ? "bg-brand/10 border-brand/50 shadow-[0_0_10px_rgba(255,122,47,0.2)]" : "bg-bg-light border-border"
-            )}>
-              <Zap className={cn("w-3 h-3", isFullAutonomy ? "text-brand" : "text-text-muted")} />
-              <span className={cn("text-[10px] font-mono uppercase tracking-wider", isFullAutonomy ? "text-brand" : "text-text-muted")}>Autonomy</span>
-              <button
-                onClick={() => setIsFullAutonomy(!isFullAutonomy)}
-                className={cn(
-                  "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none",
-                  isFullAutonomy ? "bg-brand" : "bg-border"
-                )}
-              >
-                <span
-                  className={cn(
-                    "inline-block h-3 w-3 transform rounded-full bg-surface transition-transform",
-                    isFullAutonomy ? "translate-x-5" : "translate-x-1"
-                  )}
-                />
-              </button>
-            </div>
-
-            {/* Selected Context Indicator */}
-            {selectedFile && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-brand/10 border border-brand/30 rounded-lg animate-in fade-in slide-in-from-right-4">
-                <FileText className="w-3.5 h-3.5 text-brand" />
-                <div className="flex flex-col">
-                  <span className="text-[8px] font-black uppercase tracking-widest text-brand/70">Ref Context</span>
-                  <span className="text-[10px] font-mono text-text-main truncate max-w-[120px]">
-                    {selectedFile.name}
-                  </span>
-                </div>
-                <button 
-                  onClick={() => setSelectedFile(null)}
-                  className="ml-1 p-1 hover:bg-brand/20 rounded-md transition-colors text-brand"
-                  title="Clear Reference Context"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-            )}
-
-            {/* File Browser Toggle */}
+      <div className={cn("h-screen bg-bg-light text-text-main font-sans flex overflow-hidden selection:bg-brand/30 modern-grid", isBooting && "opacity-0")}>
+        {/* Sidebar Nav Rail */}
+        <nav className="flex-none w-16 border-r border-border bg-surface/80 backdrop-blur-xl flex flex-col items-center py-6 gap-3 z-30">
+          <div className="flex flex-col gap-3 flex-1">
             <button
-              onClick={() => setShowFileBrowser(!showFileBrowser)}
+              onClick={() => setCurrentView('chat')}
               className={cn(
-                "p-2 border rounded-lg transition-all flex items-center gap-2",
-                showFileBrowser ? "bg-[#4FE3D4]/10 border-[#4FE3D4]/50 text-[#4FE3D4] shadow-[0_0_10px_rgba(79,227,212,0.2)]" : "bg-bg-light border-border text-text-muted hover:text-text-main"
+                "p-3 rounded-xl transition-all duration-300 relative group",
+                currentView === 'chat' ? "bg-brand/20 text-brand shadow-[0_0_15px_rgba(110,200,255,0.2)]" : "text-text-muted hover:text-text-main hover:bg-white/5"
               )}
-              title="Toggle File Browser"
+              title="Supervisor Agent"
             >
-              <Layout className="w-4 h-4" />
-              <span className="text-[10px] font-mono uppercase tracking-wider hidden sm:inline">Files</span>
+              <Bot className="w-5 h-5" />
+              {currentView === 'chat' && <motion.div layoutId="nav-glow" className="absolute -left-[1px] top-1/4 bottom-1/4 w-[2px] bg-brand rounded-r-full" />}
             </button>
 
             <button
-              onClick={fetchModels}
-              disabled={isFetchingModels || !apiKey}
-              className="p-2 bg-bg-light border border-border rounded-lg hover:border-brand/50 hover:text-brand transition-all disabled:opacity-50"
-              title="Refresh Models"
+              onClick={() => setCurrentView('ollamaWeb')}
+              className={cn(
+                "p-3 rounded-xl transition-all duration-300 relative group",
+                currentView === 'ollamaWeb' ? "bg-brand/20 text-brand shadow-[0_0_15px_rgba(110,200,255,0.2)]" : "text-text-muted hover:text-text-main hover:bg-white/5"
+              )}
+              title="Web Research"
             >
-              <RefreshCw className={cn("w-4 h-4", isFetchingModels && "animate-spin")} />
+              <Globe className="w-5 h-5" />
+              {currentView === 'ollamaWeb' && <motion.div layoutId="nav-glow" className="absolute -left-[1px] top-1/4 bottom-1/4 w-[2px] bg-brand rounded-r-full" />}
             </button>
 
             <button
-              onClick={() => setIsSettingsOpen(true)}
-              className="p-2 bg-bg-light border border-border rounded-lg hover:border-brand/50 hover:text-brand transition-all"
-              title="Settings"
+              onClick={() => setCurrentView('webdesign')}
+              className={cn(
+                "p-3 rounded-xl transition-all duration-300 relative group",
+                currentView === 'webdesign' ? "bg-brand/20 text-brand shadow-[0_0_15px_rgba(110,200,255,0.2)]" : "text-text-muted hover:text-text-main hover:bg-white/5"
+              )}
+              title="Coding Engine"
             >
-              <Settings className="w-4 h-4" />
+              <Code className="w-5 h-5" />
+              {currentView === 'webdesign' && <motion.div layoutId="nav-glow" className="absolute -left-[1px] top-1/4 bottom-1/4 w-[2px] bg-brand rounded-r-full" />}
             </button>
 
             <button
-              onClick={clearChat}
-              className="p-2 bg-bg-light border border-border rounded-lg hover:border-[#FF7A2F]/50 hover:text-[#FF7A2F] transition-all"
-              title="Clear Chat"
+              onClick={() => setCurrentView('hermes')}
+              className={cn(
+                "p-3 rounded-xl transition-all duration-300 relative group",
+                currentView === 'hermes' ? "bg-brand/20 text-brand shadow-[0_0_15px_rgba(110,200,255,0.2)]" : "text-text-muted hover:text-text-main hover:bg-white/5"
+              )}
+              title="Hermes CLI"
             >
-              <Trash2 className="w-4 h-4" />
+              <Zap className="w-5 h-5" />
+              {currentView === 'hermes' && <motion.div layoutId="nav-glow" className="absolute -left-[1px] top-1/4 bottom-1/4 w-[2px] bg-brand rounded-r-full" />}
+            </button>
+
+            <button
+              onClick={() => setCurrentView('security')}
+              className={cn(
+                "p-3 rounded-xl transition-all duration-300 relative group",
+                currentView === 'security' ? "bg-brand/20 text-brand shadow-[0_0_15px_rgba(110,200,255,0.2)]" : "text-text-muted hover:text-text-main hover:bg-white/5"
+              )}
+              title="Security Audits"
+            >
+              <Shield className="w-5 h-5" />
+              {currentView === 'security' && <motion.div layoutId="nav-glow" className="absolute -left-[1px] top-1/4 bottom-1/4 w-[2px] bg-brand rounded-r-full" />}
+            </button>
+
+            <button
+              onClick={() => setCurrentView('dashboard')}
+              className={cn(
+                "p-3 rounded-xl transition-all duration-300 relative group",
+                currentView === 'dashboard' ? "bg-brand/20 text-brand shadow-[0_0_15px_rgba(110,200,255,0.2)]" : "text-text-muted hover:text-text-main hover:bg-white/5"
+              )}
+              title="CATOMES Control"
+            >
+              <Database className="w-5 h-5" />
+              {currentView === 'dashboard' && <motion.div layoutId="nav-glow" className="absolute -left-[1px] top-1/4 bottom-1/4 w-[2px] bg-brand rounded-r-full" />}
             </button>
           </div>
-        </div>
-      </header>
-      {/* Main Content Area - Split Screen */}
-      <div className="flex-1 flex overflow-hidden relative">
+        </nav>
+
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Header / Config Bar */}
+          <header className="flex-none border-b border-border py-3 px-6 bg-surface/50 backdrop-blur-md z-20">
+            <div className="w-full flex items-center justify-between">
+              <div className="flex items-center gap-6">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setIsModelInfoOpen(true)}
+                    className="p-1.5 bg-bg-light border border-border rounded-lg text-text-muted hover:text-brand hover:border-brand/50 transition-all flex-none"
+                    title="Model Knowledge Base"
+                  >
+                    <Info className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="p-1.5 bg-bg-light border border-border rounded-lg text-text-muted hover:text-brand hover:border-brand/50 transition-all"
+                    title="Settings"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    onClick={() => setShowFileBrowser(!showFileBrowser)}
+                    className={cn(
+                      "p-1.5 border rounded-lg transition-all",
+                      showFileBrowser ? "bg-[#4FE3D4]/10 border-[#4FE3D4]/50 text-[#4FE3D4]" : "bg-bg-light border-border text-text-muted hover:bg-white/5"
+                    )}
+                    title="File Browser"
+                  >
+                    <Layout className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    onClick={fetchModels}
+                    className="p-1.5 bg-bg-light border border-border rounded-lg text-text-muted hover:text-brand hover:border-brand/50 transition-all"
+                    title="Refresh Models"
+                  >
+                    <RefreshCw className={cn("w-4 h-4", isFetchingModels && "animate-spin")} />
+                  </button>
+
+                  <button
+                    onClick={clearChat}
+                    className="p-1.5 bg-bg-light border border-border rounded-lg text-text-muted hover:text-claw hover:border-claw/50 transition-all"
+                    title="Clear Current Logs"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    onClick={() => setIsFAQOpen(true)}
+                    className="p-1.5 bg-bg-light border border-border rounded-lg text-text-muted hover:text-brand hover:border-brand/50 transition-all flex items-center justify-center"
+                    title="System Guide"
+                  >
+                    <HelpCircle className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="h-4 w-[1px] bg-border mx-2" />
+
+                {/* Status Overlays */}
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => setIsAgentMode(!isAgentMode)}
+                      className={cn(
+                        "px-2 py-1 rounded text-[8px] font-black tracking-widest transition-all cursor-pointer hover:ring-1 hover:ring-white/20", 
+                        isAgentMode ? "bg-brand text-[#0A0F1A]" : "bg-white/5 text-text-muted"
+                      )}
+                      title={isAgentMode ? "Disable Agent Mode" : "Enable Agent Mode"}
+                    >
+                      AGENT
+                    </button>
+                    <button 
+                      onClick={() => setIsFullAutonomy(!isFullAutonomy)}
+                      className={cn(
+                        "px-2 py-1 rounded text-[8px] font-black tracking-widest transition-all cursor-pointer hover:ring-1 hover:ring-white/20", 
+                        isFullAutonomy ? "bg-brand text-[#0A0F1A]" : "bg-white/5 text-text-muted"
+                      )}
+                      title={isFullAutonomy ? "Disable Full Autonomy" : "Enable Full Autonomy"}
+                    >
+                      AUTO
+                    </button>
+                    <button 
+                      onClick={() => setIsFollowAgentActive(!isFollowAgentActive)}
+                      className={cn(
+                        "px-2 py-1 rounded text-[8px] font-black tracking-widest transition-all cursor-pointer hover:ring-1 hover:ring-white/20", 
+                        isFollowAgentActive ? "bg-emerald-500 text-[#0A0F1A]" : "bg-white/5 text-text-muted"
+                      )}
+                      title={isFollowAgentActive ? "Stop Following Mission" : "Follow Active Mission"}
+                    >
+                      FOLLOW
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className={cn(
+                  "w-1.5 h-1.5 rounded-full",
+                  connectionStatus === 'connected' ? "bg-[#4FE3D4] shadow-[0_0_8px_rgba(79,227,212,0.6)]" : 
+                  connectionStatus === 'connecting' ? "bg-[#6EC8FF] animate-pulse" :
+                  connectionStatus === 'error' ? "bg-[#FF7A2F]" : "bg-text-muted"
+                )} />
+              </div>
+            </div>
+          </header>
+          
+          {/* Content Area Overlay Context */}
+          <div className="flex-1 relative overflow-hidden flex flex-col">
+            {/* Main Content Area - Full Screen for views */}
+            <div className="flex-1 flex overflow-hidden relative bg-bg-light/40">
         {/* Webdesign View */}
         <div className={cn("absolute inset-0 flex overflow-hidden", currentView !== 'webdesign' && "hidden")}>
           <WebdesignView 
@@ -913,6 +971,10 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
             onTransfer={handleTransfer}
             pendingTransfer={pendingTransfer}
             onContextUsed={() => setPendingTransfer(null)}
+            catomeStore={catomeStore}
+            onUpdateCatome={updateCatome}
+            currentCode={globalCode}
+            onCodeChange={setGlobalCode}
           />
         </div>
 
@@ -936,6 +998,8 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
             pendingTransfer={pendingTransfer}
             onContextUsed={() => setPendingTransfer(null)}
             onGlobalMessage={sendMessage}
+            catomeStore={catomeStore}
+            onUpdateCatome={updateCatome}
           />
         </div>
 
@@ -952,6 +1016,8 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
             onTransfer={handleTransfer}
             pendingTransfer={pendingTransfer}
             onContextUsed={() => setPendingTransfer(null)}
+            catomeStore={catomeStore}
+            onUpdateCatome={updateCatome}
           />
         </div>
 
@@ -968,6 +1034,19 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
             onTransfer={handleTransfer}
             pendingTransfer={pendingTransfer}
             onContextUsed={() => setPendingTransfer(null)}
+            catomeStore={catomeStore}
+            onUpdateCatome={updateCatome}
+          />
+        </div>
+
+        {/* CATOMES Dashboard View */}
+        <div className={cn("absolute inset-0 flex overflow-hidden", currentView !== 'dashboard' && "hidden")}>
+          <CatomeDashboard 
+            apiKey={apiKey}
+            catomeStore={catomeStore}
+            onRefresh={fetchCatomes}
+            onCreateCatome={createCatome}
+            onUpdateCatome={updateCatome}
           />
         </div>
 
@@ -994,13 +1073,6 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
                   </select>
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none text-text-muted" />
                 </div>
-                <button
-                  onClick={() => setIsModelInfoOpen(true)}
-                  className="p-2 bg-bg-light border border-border rounded-lg hover:border-brand/50 hover:text-brand transition-all flex-none"
-                  title="Model Knowledge Base"
-                >
-                  <Info className="w-4 h-4" />
-                </button>
               </div>
 
               <div className="flex items-center gap-2">
@@ -1025,11 +1097,24 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
               className="flex-1 overflow-y-auto p-4 space-y-8 scroll-smooth scrollbar-thin scrollbar-thumb-brand/10 scrollbar-track-transparent"
             >
           {messages.length === 0 && !error && (
-            <div className="h-full flex flex-col items-center justify-center text-center space-y-8">
+            <div className="h-full flex flex-col items-center justify-center text-center space-y-8 relative overflow-hidden">
+              {/* Large Background Logo */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03]">
+                <svg className="w-[1200px] h-[1200px]" viewBox="0 0 1920 1080">
+                  <g fill="currentColor" className="text-[#6EC8FF]">
+                    <MainframeLogo />
+                  </g>
+                </svg>
+              </div>
+
               <div className="relative group">
                 <div className="absolute inset-0 bg-[#6EC8FF] blur-[100px] opacity-10 group-hover:opacity-20 transition-opacity animate-pulse" />
-                <div className="w-64 h-32 opacity-10 relative transition-all duration-700 group-hover:opacity-30 group-hover:scale-110">
-                  <CATLogo />
+                <div className="relative transition-all duration-700 group-hover:scale-110">
+                  <div className="w-24 h-24 text-[#6EC8FF] opacity-20">
+                    <svg viewBox="0 0 1920 1080" className="w-full h-full">
+                       <MainframeLogo />
+                    </svg>
+                  </div>
                 </div>
               </div>
               <div className="space-y-3 relative z-10">
@@ -1216,20 +1301,79 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="w-1/2 h-full border-l border-border"
+            className="w-1/2 h-full border-l border-border bg-surface flex flex-col"
           >
-            <FileBrowser 
-              apiKey={apiKey} 
-              onFileSelect={setSelectedFile} 
-              onAnalyze={(file) => {
-                setAnalyzeTarget({ ...file, _t: Date.now() }); // Add timestamp to trigger effect even if same file
-                setCurrentView('chat');
-                sendMessage(`Analyze this file: ${file.path}`);
-              }}
-            />
+            {/* Right Pane Tab Switcher */}
+            <div className="flex-none px-4 py-3 border-b border-border bg-bg-light/30 flex items-center justify-between">
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setRightPaneTab('files')}
+                  className={cn(
+                    "text-[10px] font-mono uppercase tracking-[0.2em] font-black transition-all",
+                    rightPaneTab === 'files' ? "text-brand" : "text-text-muted hover:text-text-main"
+                  )}
+                >
+                  File Browser
+                </button>
+                <div className="w-[1px] h-3 bg-border" />
+                <button 
+                  onClick={() => setRightPaneTab('preview')}
+                  className={cn(
+                    "text-[10px] font-mono uppercase tracking-[0.2em] font-black transition-all",
+                    rightPaneTab === 'preview' ? "text-brand underline decoration-2 underline-offset-4" : "text-text-muted hover:text-text-main"
+                  )}
+                >
+                  Live Preview
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
+                <span className="text-[8px] font-mono text-text-muted uppercase tracking-widest leading-none">System Active</span>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-hidden relative">
+              {rightPaneTab === 'files' ? (
+                <FileBrowser 
+                  apiKey={apiKey} 
+                  selectedFile={selectedFile}
+                  onFileSelect={setSelectedFile} 
+                  onAnalyze={(file) => {
+                    setAnalyzeTarget({ ...file, _t: Date.now() });
+                    setCurrentView('chat');
+                    sendMessage(`Analyze this file: ${file.path}`);
+                  }}
+                />
+              ) : (
+                <div className="h-full w-full bg-white flex flex-col">
+                  <div className="flex-none px-4 py-2 border-b border-border bg-bg-light flex items-center justify-between">
+                    <span className="text-[10px] font-mono text-text-muted uppercase font-bold tracking-widest">Sandbox Preview</span>
+                    <button 
+                      onClick={() => {
+                        const blob = new Blob([globalCode], { type: 'text/html' });
+                        const url = URL.createObjectURL(blob);
+                        window.open(url, '_blank');
+                      }}
+                      className="p-1 hover:bg-brand/10 rounded transition-colors"
+                      title="Open in new tab"
+                    >
+                      <Maximize2 className="w-3 h-3 text-brand" />
+                    </button>
+                  </div>
+                  <iframe 
+                    srcDoc={globalCode}
+                    className="flex-1 w-full h-full border-none"
+                    title="Global Preview"
+                    sandbox="allow-scripts allow-forms allow-modals"
+                  />
+                </div>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1322,6 +1466,24 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
                   </div>
                 </div>
 
+                {/* Sub-menu: Advanced Tools */}
+                <div className="space-y-3 pt-2 border-t border-border">
+                  <label className="text-[10px] font-mono uppercase text-text-muted tracking-[0.2em] font-bold">Advanced Subsystems</label>
+                  <button
+                    onClick={() => {
+                      setCurrentView('docker');
+                      setIsSettingsOpen(false);
+                    }}
+                    className="w-full flex items-center justify-between p-3 bg-bg-light border border-border rounded-xl hover:border-brand/50 transition-all group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Box className="w-4 h-4 text-brand" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-text-main">Docker Controls</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-brand transition-colors" />
+                  </button>
+                </div>
+
                 <div className="pt-4">
                   <button
                     onClick={() => {
@@ -1350,6 +1512,11 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
         availableModels={models.map(m => m.name)}
         disabledModels={disabledModels}
         onToggleModel={toggleModelStatus}
+      />
+
+      <FAQModal 
+        isOpen={isFAQOpen}
+        onClose={() => setIsFAQOpen(false)}
       />
     </div>
   </>

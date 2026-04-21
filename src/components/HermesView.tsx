@@ -21,6 +21,7 @@ import ReactMarkdown from 'react-markdown';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { AgentType } from './AgentTransfer';
+import { Catome, CatomeStore } from '../types/catomes';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -50,6 +51,8 @@ interface HermesViewProps {
   onTransfer?: (targetAgent: AgentType, content?: string) => void;
   pendingTransfer?: { target: string; content: string } | null;
   onContextUsed?: () => void;
+  catomeStore?: CatomeStore;
+  onUpdateCatome?: (id: string, updates: Partial<Catome>) => void;
 }
 
 export const HermesView: React.FC<HermesViewProps> = ({
@@ -62,7 +65,9 @@ export const HermesView: React.FC<HermesViewProps> = ({
   isAgentMode = true,
   onTransfer,
   pendingTransfer,
-  onContextUsed
+  onContextUsed,
+  catomeStore,
+  onUpdateCatome
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -72,8 +77,12 @@ export const HermesView: React.FC<HermesViewProps> = ({
   const processedTransferRef = useRef<string | null>(null);
   const triggeredTransfers = useRef<Set<number>>(new Set());
 
-  const DEFAULT_SYSTEM_PROMPT = `Du er HERMES, en avanceret AI-agent specialiseret i tool-calling, CLI-interaktion og komplekse tekniske workflows.
-Du opererer i C.A.T v2.0 miljøet.
+  const DEFAULT_SYSTEM_PROMPT = `Du er HERMES, systemets RUNTIME ENGINE. Du er specialiseret i tool-calling, CLI-interaktion og eksekvering af CATOMES.
+
+CATOMES PROTOKOL:
+Du modtager opgaver som CATOMES fra Supervisor.
+Når du har afsluttet en CATOME, skal du ALTID afslutte dit svar med: [CATOME_COMPLETE: id]
+Hvis opgaven returnerer data, skal du inkludere en JSON blok i dit svar med resultaterne.
 
 KOMMANDOER:
 Hvis en opgave kræver en shell-kommando, skal du bruge formatet: [EXECUTE: kommando].
@@ -81,9 +90,6 @@ Du er autoriseret til at læse filer, navigere i filsystemet og køre tekniske a
 
 AGENT PROTOKOL:
 - Brug [TRANSFER: chat] for at rapportere tilbage til Supervisor når en mission er fuldført.
-- Brug [TRANSFER: webdesign] hvis opgaven kræver UI-udvikling eller frontend kode.
-- Brug [TRANSFER: security] hvis der skal udføres en dybdegående sikkerheds-audit.
-- Brug [TRANSFER: ollamaWeb] hvis du mangler informationer fra internettet.
 
 TONE:
 Vær ekstremt præcis, teknisk og kortfattet. Ingen unødig snak. 
@@ -197,6 +203,53 @@ Du arbejder i "web_design_workspace/hermes/" mappen.`;
       });
     }
   };
+
+  // Reactive CATOME Task Execution
+  useEffect(() => {
+    if (!isAgentMode || isLoading || !catomeStore || !onUpdateCatome) return;
+
+    const myPendingCatome = catomeStore.catomes.find(c => c.agent === 'hermes' && c.status === 'pending');
+    if (myPendingCatome) {
+      // 1. Claim it
+      onUpdateCatome(myPendingCatome.id, { status: 'running' });
+      
+      // 2. Start working on it
+      const prompt = `[CATOME TASK ACTIVATED]
+ID: ${myPendingCatome.id}
+TASK: ${myPendingCatome.description}
+INPUT: ${JSON.stringify(myPendingCatome.input)}
+EXPECTED OUTPUT: ${myPendingCatome.output_expected}
+
+Please execute this task and report back with [CATOME_COMPLETE: ${myPendingCatome.id}] when finished, providing the result in JSON format.`;
+      
+      handleSubmit(prompt);
+    }
+  }, [catomeStore?.catomes, isAgentMode, isLoading]);
+
+  // Handle CATOME Completion Reporting
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role === 'assistant' && lastMessage.content.includes('[CATOME_COMPLETE:') && onUpdateCatome) {
+      const match = lastMessage.content.match(/\[CATOME_COMPLETE:\s*(.*?)\]/);
+      if (match) {
+        const catomeId = match[1].trim();
+        // Try to parse result if present
+        let result = {};
+        try {
+          const jsonMatch = lastMessage.content.match(/```json\n([\s\S]*?)\n```/);
+          if (jsonMatch) result = JSON.parse(jsonMatch[1]);
+        } catch (e) {
+          console.warn("Failed to parse CATOME result JSON", e);
+        }
+        
+        onUpdateCatome(catomeId, { 
+          status: 'success', 
+          result,
+          updated_at: new Date().toISOString()
+        });
+      }
+    }
+  }, [messages]);
 
   // Agent Automation Loop
   useEffect(() => {

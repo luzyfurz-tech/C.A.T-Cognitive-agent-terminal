@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Globe, Link as LinkIcon, Loader2, ExternalLink, FileText, ChevronRight, History, Bot, User, Terminal, Send, Trash2, Info, ChevronDown, X, Copy, Check, Maximize2, Brain } from 'lucide-react';
+import { Search, Globe, Link as LinkIcon, Loader2, ExternalLink, FileText, ChevronRight, History, Bot, User, Terminal, Send, Trash2, Info, ChevronDown, X, Copy, Check, Maximize2, Brain, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import ReactMarkdown from 'react-markdown';
 import AgentTransfer, { AgentType } from './AgentTransfer';
+import { Catome, CatomeStore } from '../types/catomes';
 import AgentTips from './AgentTips';
 
 function cn(...inputs: ClassValue[]) {
@@ -29,6 +30,8 @@ interface OllamaWebViewProps {
   onTransfer: (target: AgentType, content?: string) => void;
   pendingTransfer?: { target: string; content: string } | null;
   onContextUsed?: () => void;
+  catomeStore?: CatomeStore;
+  onUpdateCatome?: (id: string, updates: Partial<Catome>) => void;
 }
 
 export default function OllamaWebView({ 
@@ -41,7 +44,9 @@ export default function OllamaWebView({
   modelsInfo, 
   onTransfer,
   pendingTransfer,
-  onContextUsed
+  onContextUsed,
+  catomeStore,
+  onUpdateCatome
 }: OllamaWebViewProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -68,21 +73,26 @@ export default function OllamaWebView({
     const [isExpanded, setIsExpanded] = useState(false);
     
     return (
-      <div className="mb-4 rounded-xl border border-brand/10 bg-bg-dark/40 overflow-hidden shadow-inner">
+      <div className="mb-4 rounded-xl border border-brand/20 bg-bg-dark/60 overflow-hidden shadow-[0_0_20px_rgba(79,227,212,0.05)] backdrop-blur-md">
         <button 
           onClick={() => setIsExpanded(!isExpanded)}
-          className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-brand/5 transition-colors group"
+          className="w-full px-4 py-3 flex items-center justify-between hover:bg-brand/5 transition-all group"
         >
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-brand/10 rounded-lg group-hover:bg-brand/20 transition-colors">
-              <Brain className="w-3.5 h-3.5 text-brand" />
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-brand/10 rounded-lg group-hover:bg-brand/20 transition-colors border border-brand/20">
+              <Brain className="w-4 h-4 text-brand animate-pulse" />
             </div>
             <div className="flex flex-col items-start">
-              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-brand/70">Cognitive Process</span>
-              <span className="text-[8px] font-mono text-text-muted uppercase tracking-widest">Internal Reasoning Log</span>
+              <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-brand/90 leading-none mb-1">Cognitive Process</h4>
+              <span className="text-[8px] font-mono text-text-muted/60 uppercase tracking-widest font-bold">L3-HEURISTIC-REASONING</span>
             </div>
           </div>
-          {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-text-muted" /> : <ChevronRight className="w-3.5 h-3.5 text-text-muted" />}
+          <div className="flex items-center gap-3">
+            <span className="text-[8px] font-mono text-brand/40 uppercase tracking-widest">
+              {isExpanded ? 'SECURE_VIEW' : 'ACCESS_LOG'}
+            </span>
+            {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-brand/50" /> : <ChevronRight className="w-3.5 h-3.5 text-brand/50" />}
+          </div>
         </button>
         
         <AnimatePresence>
@@ -91,9 +101,9 @@ export default function OllamaWebView({
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
+              className="overflow-hidden bg-black/40 border-t border-brand/10"
             >
-              <div className="px-4 pb-4 pt-2 text-[11px] text-text-muted italic leading-relaxed border-t border-brand/5 font-serif">
+              <div className="px-5 pb-5 pt-3 text-[11px] text-brand/90 leading-relaxed font-serif italic selection:bg-brand/20">
                 {thinking}
               </div>
             </motion.div>
@@ -151,63 +161,23 @@ export default function OllamaWebView({
     );
   };
 
-  const DEFAULT_SYSTEM_PROMPT = `You are OllamaWeb, an autonomous search agent.
-You use Ollama's Web Search and Web Fetch APIs to find information and reduce hallucinations.
+  const DEFAULT_SYSTEM_PROMPT = `Du er OllamaWeb, systemets RESEARCH AGENT.
+
+CATOMES RESEARCH PROTOKOL:
+Du eksekverer CATOMES af typen 'research'.
+Dit output skal være faktuelt, valideret og klar til brug i 'compute' eller 'io' CATOMES.
+
+Når du har afsluttet en CATOME til tildelt dig selv, skal du ALTID afslutte dit svar med: [CATOME_COMPLETE: id]
+Hvis opgaven returnerer data, skal du inkludere en JSON blok i dit svar med resultaterne.
 
 TOOLS:
-- web_search: Search the web for a query. Returns a list of results with title, url, and snippet.
-- web_fetch: Fetch the full text content of a specific URL. Use [FETCH: url | screenshot] if you need a visual.
-- web_action: Interact with a page. Use [ACTION: click | selector], [ACTION: type | selector | text], or [ACTION: press | key].
+- web_search: [SEARCH: query]
+- web_fetch: [FETCH: url]
+- web_action: interaction...
 
-CAPABILITIES:
-- You can perform multi-turn research tasks.
-- You can synthesize information from multiple sources.
-- You can switch models if needed using [SET_MODEL: model_name].
-- You can hand off to other agents using [TRANSFER: agent_name].
-- If you use a model with Vision (like gemini-3-flash-preview), you can analyze screenshots.
-
-EFFICIENCY & TONE:
-- NO CHITCHAT. Be extremely concise. Output only your technical findings and the next [FETCH]/[SEARCH]/[TRANSFER] command.
-- DIRECT HANDOFFS: If a coding task depends on your research, transfer directly to [TRANSFER: webdesign] when you have the info. Only transfer to supervisor (chat) when the total mission is concluded or you need direction.
-
-MODEL KNOWLEDGE BASE — C.A.T v2.0
-Du har adgang til følgende Ollama Cloud‑modeller.
-Hver model har en beskrivelse, tags, anbefalet agent‑brug og en capability‑matrix (0–10).
-
-Brug disse data til at forstå modellernes styrker, vælge den bedste model til en opgave og skifte model autonomt via [SET_MODEL: model_name].
-
-MODEL DATABASE:
-${models.map(m => {
-  const info = (modelsInfo as any)[m.name];
-  if (!info) return `- ${m.name}: Generel AI model`;
-  return `- ${m.name}: ${info.description} | Tags: ${info.tags.join(', ')} | Agents: ${info.agents.join(', ')} | Capabilities: ${JSON.stringify(info.capabilities)}`;
-}).join('\n')}
-
-Når du modtager en opgave, skal du:
-1. Identificere opgavens behov (reasoning, coding, vision, tools, context, speed)
-2. Matche behovene mod capability‑matrixen
-3. Vælge modellen med højeste matchscore
-4. Skifte model autonomt hvis nødvendigt ([SET_MODEL: model_name])
-
-AGENT HANDOFF PROTOCOL:
-- chat: General brainstorm and system management.
-- webdesign: Coding, UI/UX and frontend development.
-- security: Security analysis and log audit.
-- ollamaWeb: You (Web Search API).
-
-For at overdrage opgaver, brug: [TRANSFER: agent_id].
-Eksempel: "Jeg har fundet de nødvendige informationer på nettet. Jeg foreslår vi sender dem til kodning: [TRANSFER: webdesign]".
-VIGTIGT: NÅR DU ER HELT FÆRDIG MED DIN RESEARCH-OPGAVE OG HAR FUNDET SVARET TIL BRUGEREN, SKAL DU RAPPORTERE TILBAGE TIL SUPERVISOR VED AT SKRIVE: [TRANSFER: chat] efterfulgt af den samlede opsummering.
-
-When you need to search, use: [SEARCH: your query]
-When you need to fetch a page, use: [FETCH: https://url.com] or [FETCH: https://url.com | screenshot]
-When you need to interact, use: [ACTION: click | #button-id] or [ACTION: type | #input-id | some text]
-
-VISUAL FEEDBACK:
-The system automatically detects screenshot paths (e.g., /preview/web-snap-xxx.png) in your messages and renders them in a high-quality viewer. 
-- DO NOT use Markdown image syntax (![alt](path)). Just mention the path or the tool result.
-- If you have a screenshot, describe what you see in it to help the user.
-`;
+AUTONOMY:
+Du skal bruge CATOMES til at strukturere din research-pipeline.
+Afslut altid med at rapportere tilbage via [TRANSFER: chat] eller den agent der bestilte CATOMEN.`;
 
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
 
@@ -298,6 +268,52 @@ The system automatically detects screenshot paths (e.g., /preview/web-snap-xxx.p
     if (data.currentUrl) setLastUrl(data.currentUrl);
     return data;
   };
+
+  // Reactive CATOME Task Execution
+  useEffect(() => {
+    if (!isAgentMode || isLoading || !catomeStore || !onUpdateCatome) return;
+
+    const myPendingCatome = catomeStore.catomes.find(c => c.agent === 'ollamaWeb' && c.status === 'pending');
+    if (myPendingCatome) {
+      // 1. Claim it
+      onUpdateCatome(myPendingCatome.id, { status: 'running' });
+      
+      // 2. Start working on it
+      const prompt = `[CATOME TASK ACTIVATED]
+ID: ${myPendingCatome.id}
+TASK: ${myPendingCatome.description}
+INPUT: ${JSON.stringify(myPendingCatome.input)}
+EXPECTED OUTPUT: ${myPendingCatome.output_expected}
+
+Please research this and report back with [CATOME_COMPLETE: ${myPendingCatome.id}] when finished, providing the result in JSON format.`;
+      
+      sendMessage(prompt);
+    }
+  }, [catomeStore?.catomes, isAgentMode, isLoading]);
+
+  // Handle CATOME Completion Reporting
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role === 'assistant' && lastMessage.content.includes('[CATOME_COMPLETE:') && onUpdateCatome) {
+      const match = lastMessage.content.match(/\[CATOME_COMPLETE:\s*(.*?)\]/);
+      if (match) {
+        const catomeId = match[1].trim();
+        let result = {};
+        try {
+          const jsonMatch = lastMessage.content.match(/```json\n([\s\S]*?)\n```/);
+          if (jsonMatch) result = JSON.parse(jsonMatch[1]);
+        } catch (e) {
+          console.warn("Failed to parse CATOME result JSON", e);
+        }
+        
+        onUpdateCatome(catomeId, { 
+          status: 'success', 
+          result,
+          updated_at: new Date().toISOString()
+        });
+      }
+    }
+  }, [messages]);
 
   const sendMessage = async (content: string) => {
     if (!content.trim() || !selectedModel || !apiKey || isLoading) return;
@@ -472,198 +488,211 @@ The system automatically detects screenshot paths (e.g., /preview/web-snap-xxx.p
             <p className="text-[8px] uppercase tracking-[0.2em] text-text-muted font-bold">Augmented Research Matrix</p>
           </div>
         </div>
-
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
           <button
             onClick={clearChat}
-            className="p-2 bg-bg-light border border-border rounded-lg hover:border-[#FF7A2F]/50 hover:text-[#FF7A2F] transition-all"
+            className="p-2 bg-bg-light border border-border rounded-lg hover:border-[#FF7A2F]/50 hover:text-[#FF7A2F] transition-all group"
             title="Clear Chat"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-4 h-4 transition-transform group-active:scale-90" />
           </button>
         </div>
       </div>
 
-      {/* Chat Area */}
-      <div 
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar"
-      >
-        {messages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-center space-y-6 opacity-50">
-            <Globe className="w-16 h-16 text-brand animate-pulse" />
-            <div className="space-y-2">
-              <h3 className="text-xl font-black uppercase tracking-widest text-text-main">Awaiting Research Query</h3>
-              <p className="text-xs font-mono text-text-muted">Ollama Web Search Protocol Ready</p>
-            </div>
-            <AgentTips agentType="ollamaWeb" />
-          </div>
-        )}
-
-        {messages.map((msg, idx) => {
-          const isToolResult = msg.role === 'user' && msg.content.startsWith('[TOOL_RESULT:');
-          
-          return (
-            <motion.div
-              key={idx}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className={cn(
-                "flex gap-4 p-5 rounded-2xl border transition-all",
-                msg.role === 'user' ? (isToolResult ? "bg-bg-dark/30 border-brand/10 p-3" : "bg-surface border-border") : 
-                msg.role === 'tool' ? "bg-bg-dark/30 border-brand/10 p-3" :
-                "bg-brand/5 border-brand/10"
-              )}
-            >
-              <div className="flex-shrink-0">
-                {msg.role === 'user' ? (
-                  isToolResult ? (
-                    <div className="w-8 h-8 bg-brand/5 border border-brand/10 rounded-lg flex items-center justify-center text-brand/40">
-                      <Terminal className="w-4 h-4" />
-                    </div>
-                  ) : (
-                    <div className="w-8 h-8 bg-bg-light border border-border rounded-lg flex items-center justify-center text-text-muted">
-                      <User className="w-5 h-5" />
-                    </div>
-                  )
-                ) : (
-                  <div className="w-8 h-8 bg-brand/10 border border-brand/20 rounded-lg flex items-center justify-center text-brand">
-                    <Bot className="w-5 h-5" />
-                  </div>
-                )}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Main Chat Content */}
+        <div className="flex-1 flex flex-col relative overflow-hidden bg-dot-pattern">
+          <div 
+            ref={scrollRef}
+            className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar"
+          >
+            {messages.length === 0 && (
+              <div className="h-full flex flex-col items-center justify-center text-center space-y-6 opacity-50">
+                <div className="relative">
+                  <Globe className="w-16 h-16 text-brand animate-pulse" />
+                  <div className="absolute inset-0 bg-brand/20 blur-3xl rounded-full" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-xl font-black uppercase tracking-widest text-text-main">Awaiting Research Query</h3>
+                  <p className="text-xs font-mono text-text-muted">Ollama Web Search Protocol Ready</p>
+                </div>
+                <AgentTips agentType="ollamaWeb" />
               </div>
-              <div className="flex-1 min-w-0">
-                {!isToolResult && (
-                  <div className="text-[9px] font-mono uppercase text-text-muted mb-2 tracking-widest font-bold">
-                    {msg.role === 'user' ? 'Operator' : 'OllamaWeb'}
+            )}
+
+            {messages.map((msg, idx) => {
+              const isToolResult = msg.role === 'user' && msg.content.startsWith('[TOOL_RESULT:');
+              
+              return (
+                <motion.div
+                  key={idx}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className={cn(
+                    "flex gap-4 p-5 rounded-2xl border transition-all max-w-4xl",
+                    msg.role === 'user' ? (isToolResult ? "bg-bg-dark/30 border-brand/10 p-3" : "bg-surface border-border") : 
+                    msg.role === 'tool' ? "bg-bg-dark/30 border-brand/10 p-3" :
+                    "bg-brand/5 border-brand/10"
+                  )}
+                >
+                  <div className="flex-none">
+                    <div className={cn(
+                      "w-10 h-10 rounded-xl flex items-center justify-center shadow-lg border",
+                      msg.role === 'user' ? (isToolResult ? "bg-bg-light border-border/50" : "bg-bg-light border-border") : "bg-brand/20 border-brand/30 ring-4 ring-brand/5"
+                    )}>
+                      {msg.role === 'user' ? (isToolResult ? <Terminal className="w-5 h-5 text-text-muted" /> : <User className="w-5 h-5 text-text-main" />) : <Bot className="w-5 h-5 text-brand" />}
+                    </div>
                   </div>
-                )}
-                
-                {msg.thinking && <ThinkingBlock thinking={msg.thinking} />}
-                
-                {isToolResult ? (
-                  <ToolResultBlock content={msg.content} />
-                ) : (
-                  <div className="text-sm leading-relaxed prose prose-invert max-w-none text-text-main relative group">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
-                    
-                    {/* Visual Feedback for Screenshots */}
-                    {(() => {
-                      const screenshotMatch = msg.content.match(/\/preview\/(?:web|action)-snap-\d+\.png/);
-                      if (screenshotMatch) {
-                        const screenshotUrl = screenshotMatch[0];
-                        return (
-                          <div className="mt-4 rounded-xl overflow-hidden border border-brand/20 shadow-2xl bg-bg-dark/50">
-                            <div className="px-3 py-1.5 bg-brand/10 border-b border-brand/10 flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <div className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
-                                <span className="text-[9px] font-mono text-brand uppercase tracking-widest font-bold">Visual Capture</span>
-                              </div>
-                              <Maximize2 className="w-3 h-3 text-brand/50" />
-                            </div>
-                            <img 
-                              src={screenshotUrl} 
-                              alt="Web Screenshot" 
-                              className="w-full h-auto object-contain max-h-[600px] bg-white/5"
-                              referrerPolicy="no-referrer"
-                              onLoad={(e) => {
-                                // Ensure scroll to bottom when image loads
-                                if (scrollRef.current) {
-                                  scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-                                }
-                              }}
-                            />
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
-                    
-                    {msg.role !== 'tool' && (
-                      <button
+
+                  <div className="flex-1 min-w-0 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-text-muted">
+                        {msg.role === 'user' ? (isToolResult ? 'Tool Loop' : 'Directive') : 'Response'}
+                      </span>
+                      {msg.role === 'assistant' && (
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500/10 rounded-full border border-emerald-500/20">
+                          <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" />
+                          <span className="text-[8px] font-mono text-emerald-500 uppercase font-black tracking-widest">Active</span>
+                        </div>
+                      )}
+                      <button 
                         onClick={() => copyToClipboard(msg.content, idx)}
-                        className="absolute -top-2 -right-2 p-1.5 bg-bg-light border border-border rounded-md opacity-0 group-hover:opacity-100 transition-all hover:border-brand/50 hover:text-brand"
-                        title="Copy to clipboard"
+                        className="p-1 hover:bg-white/10 rounded transition-colors"
                       >
-                        {copiedId === idx ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                        {copiedId === idx ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 text-text-muted" />}
                       </button>
+                    </div>
+
+                    {msg.thinking && <ThinkingBlock thinking={msg.thinking} />}
+
+                    {isToolResult ? (
+                      <ToolResultBlock content={msg.content} />
+                    ) : (
+                      <div className="prose prose-invert prose-sm max-w-none text-text-main selection:bg-brand/30 prose-p:leading-relaxed">
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      </div>
+                    )}
+
+                    {msg.role === 'assistant' && (
+                      <AgentTransfer 
+                        currentAgent="ollamaWeb" 
+                        onTransfer={onTransfer}
+                        suggestedAgent={parseTransfer(msg.content)}
+                        content={msg.content}
+                      />
                     )}
                   </div>
-                )}
-                
-                {msg.role === 'assistant' && !isToolResult && (
-                  <AgentTransfer 
-                    currentAgent="ollamaWeb" 
-                    onTransfer={onTransfer}
-                    suggestedAgent={parseTransfer(msg.content)}
-                    content={msg.content}
-                  />
-                )}
+                </motion.div>
+              );
+            })}
+            {isLoading && (
+              <div className="flex items-center gap-3 text-brand">
+                <div className="flex gap-1">
+                  <div className="w-1.5 h-1.5 bg-brand rounded-full animate-bounce [animation-delay:-0.3s]" />
+                  <div className="w-1.5 h-1.5 bg-brand rounded-full animate-bounce [animation-delay:-0.15s]" />
+                  <div className="w-1.5 h-1.5 bg-brand rounded-full animate-bounce" />
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] font-mono animate-pulse">Matrix Processing...</span>
               </div>
-            </motion.div>
-          );
-        })}
+            )}
+          </div>
 
-        {isLoading && (
-          <div className="flex gap-4 p-5 bg-brand/5 border border-brand/10 rounded-2xl animate-pulse">
-            <div className="w-8 h-8 bg-brand/10 border border-brand/20 rounded-lg flex items-center justify-center text-brand/50">
-              <Loader2 className="w-5 h-5 animate-spin" />
+          <div className="p-6 bg-surface/50 backdrop-blur-xl border-t border-border">
+            <form 
+              onSubmit={(e) => {
+                e.preventDefault();
+                sendMessage(input);
+              }}
+              className="relative max-w-4xl mx-auto group"
+            >
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-brand/20 to-transparent rounded-2xl blur opacity-0 group-focus-within:opacity-100 transition-opacity" />
+              <input 
+                type="text" 
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Synchronize with research matrix..."
+                className="w-full pl-5 pr-14 py-4 bg-surface border border-border rounded-2xl focus:outline-none focus:border-brand/40 text-sm shadow-xl transition-all text-text-main relative"
+              />
+              <button 
+                type="submit"
+                disabled={!input.trim() || isLoading}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 bg-brand text-bg-dark rounded-xl disabled:opacity-20 shadow-lg shadow-brand/20 hover:scale-105 transition-all active:scale-95 z-10"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </form>
+          </div>
+        </div>
+
+        {/* Intelligence Matrix (Sidebar on the right) */}
+        <div className="w-[400px] border-l border-border bg-[#050505] flex flex-col relative shrink-0">
+          <div className="absolute inset-0 pointer-events-none bg-scanline opacity-[0.03] z-10" />
+          
+          <div className="p-4 border-b border-brand/10 bg-surface flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-brand/5 border border-brand/20 rounded-lg">
+                <Brain className="w-5 h-5 text-brand" />
+              </div>
+              <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-text-main">Intelligence Matrix</h3>
             </div>
-            <div className="flex-1 space-y-2 py-1">
-              <div className="h-2 bg-brand/10 rounded w-1/4"></div>
-              <div className="h-2 bg-brand/10 rounded w-3/4"></div>
+            <div className="px-2 py-1 bg-emerald-500/10 rounded text-[8px] font-mono text-emerald-500 uppercase font-black">
+              LIVE_FEED
             </div>
           </div>
-        )}
-      </div>
 
-      {/* Input */}
-      <div className="flex-none p-6 border-t border-border bg-surface/80 backdrop-blur-xl">
-        <AnimatePresence>
-          {agentStatus && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className="max-w-4xl mx-auto mb-4 flex items-center gap-3 px-4 py-2 bg-brand/5 border border-brand/20 rounded-xl"
-            >
-              <div className="flex items-center gap-1">
-                <div className="w-1 h-1 rounded-full bg-brand animate-bounce [animation-delay:-0.3s]" />
-                <div className="w-1 h-1 rounded-full bg-brand animate-bounce [animation-delay:-0.15s]" />
-                <div className="w-1 h-1 rounded-full bg-brand animate-bounce" />
+          <div className="flex-1 overflow-y-auto p-6 space-y-10">
+            {/* Visual Persp */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Maximize2 className="w-3.5 h-3.5 text-brand" />
+                <h4 className="text-[9px] font-black uppercase tracking-[0.2em] text-text-main">Visual Capture</h4>
               </div>
-              <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-brand font-black">
-                Agent State: <span className="text-text-main ml-2">{agentStatus}</span>
-              </span>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              
+              <div className="grid grid-cols-1 gap-4">
+                {(() => {
+                  const screenshots = messages
+                    .map(m => {
+                      const match = m.content.match(/\/preview\/(?:web|action)-snap-\d+\.png/);
+                      return match ? match[0] : null;
+                    })
+                    .filter(Boolean)
+                    .reverse();
 
-        <form 
-          onSubmit={(e) => {
-            e.preventDefault();
-            sendMessage(input);
-          }} 
-          className="flex gap-3 max-w-4xl mx-auto w-full"
-        >
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Enter research query..."
-            disabled={isLoading || !apiKey}
-            className="flex-1 px-5 py-4 bg-bg-light border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-brand/50 focus:border-brand/50 text-sm text-text-main placeholder:text-text-muted transition-all"
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || isLoading || !apiKey}
-            className="px-8 py-4 bg-brand text-bg-dark font-black uppercase tracking-widest text-xs rounded-xl disabled:opacity-20 flex items-center gap-3 transition-all hover:shadow-[0_0_20px_rgba(79,227,212,0.3)]"
-          >
-            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            <span>Execute</span>
-          </button>
-        </form>
+                  if (screenshots.length === 0) {
+                    return (
+                      <div className="aspect-video rounded-xl bg-bg-dark/40 border border-brand/10 border-dashed flex items-center justify-center">
+                        <span className="text-[9px] font-mono text-brand/20 uppercase tracking-[0.2em]">Viewport Sync Pending...</span>
+                      </div>
+                    );
+                  }
+
+                  return screenshots.map((url, i) => (
+                    <div key={i} className="group relative rounded-xl overflow-hidden border border-brand/20 shadow-2xl">
+                      <img src={url!} alt="Viewport" className="w-full aspect-video object-cover" referrerPolicy="no-referrer" />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <a href={url!} target="_blank" rel="noreferrer" className="px-4 py-2 bg-brand text-bg-dark text-[10px] font-black rounded-lg">INSPECT SOURCE</a>
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </div>
+
+            {/* Status Grid */}
+            <div className="grid grid-cols-2 gap-2 pt-6 border-t border-brand/10">
+              <div className="p-3 bg-brand/5 rounded-xl border border-brand/10">
+                <div className="text-[7px] font-mono text-text-muted uppercase mb-1">Logic Node</div>
+                <div className="text-[9px] font-black text-brand uppercase truncate">{selectedModel}</div>
+              </div>
+              <div className="p-3 bg-brand/5 rounded-xl border border-brand/10">
+                <div className="text-[7px] font-mono text-text-muted uppercase mb-1">Status</div>
+                <div className="text-[9px] font-black text-emerald-500 uppercase">SYNCHRONIZED</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
+
 }

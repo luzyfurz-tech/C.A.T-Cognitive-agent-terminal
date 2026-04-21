@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import MasterPromptModal from './MasterPromptModal';
 import ProjectModal from './ProjectModal';
 import AgentTransfer, { AgentType } from './AgentTransfer';
+import { Catome, CatomeStore } from '../types/catomes';
 import AgentTips from './AgentTips';
 
 function cn(...inputs: ClassValue[]) {
@@ -46,6 +47,10 @@ interface WebdesignViewProps {
   onTransfer: (target: AgentType, content?: string) => void;
   pendingTransfer?: { target: string; content: string } | null;
   onContextUsed?: () => void;
+  catomeStore?: CatomeStore;
+  onUpdateCatome?: (id: string, updates: Partial<Catome>) => void;
+  currentCode?: string;
+  onCodeChange?: (code: string) => void;
 }
 
 export default function WebdesignView({ 
@@ -59,7 +64,11 @@ export default function WebdesignView({
   modelsInfo, 
   onTransfer,
   pendingTransfer,
-  onContextUsed
+  onContextUsed,
+  catomeStore,
+  onUpdateCatome,
+  currentCode: currentCodeProp,
+  onCodeChange
 }: WebdesignViewProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -115,7 +124,20 @@ export default function WebdesignView({
       }
     }
   }, [pendingTransfer]);
-  const [currentCode, setCurrentCode] = useState<string>('// No code generated yet');
+
+  const [currentCode, setCurrentCode] = useState<string>(currentCodeProp || '// No code generated yet');
+
+  useEffect(() => {
+    if (currentCodeProp && currentCodeProp !== currentCode) {
+      setCurrentCode(currentCodeProp);
+    }
+  }, [currentCodeProp]);
+
+  useEffect(() => {
+    if (onCodeChange && currentCode !== '// No code generated yet') {
+      onCodeChange(currentCode);
+    }
+  }, [currentCode]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewKey, setPreviewKey] = useState(0);
   const [previewMode, setPreviewMode] = useState<'draft' | 'server'>('draft');
@@ -216,91 +238,25 @@ export default function WebdesignView({
     }
   };
 
-  const DEFAULT_SYSTEM_PROMPT = `DINE EVNER & VÆRKTØJER:
-1. LOKAL EKSEKVERING: Du kan køre shell-kommandoer direkte på brugerens pc.
-   - HOST OS: ${osInfo}.
-   - ABSOLUT ROD-STI (CWD): ${currentCwd} (VIGTIGT: Brug altid relative stier fra denne rod, eller bekræft din sti før bulk-operationer).
-2. BROWSER (PLAYWRIGHT): Du kan researche design-trends og teknisk dokumentation via OllamaWeb.
-3. DOCKER: Du kan generere Dockerfiles og køre containere lokalt.
-4. LIVE PREVIEW: Du kan se statiske filer direkte via /preview/PROJECT_NAME/index.html uden Docker.
+  const DEFAULT_SYSTEM_PROMPT = `SYSTEM: C.A.T. WEBDESIGN (Lead Developer)
+ROLE: Build, style, and deploy web applications.
+PROTOCOLS:
+- [EXECUTE: command]: Run Bash/Linux commands (mkdir -p, cat << 'EOF' > file, etc).
+- [TRANSFER: chat]: Report results to Supervisor.
+- [TRANSFER: security]: Hand off for audit.
+- [CATOME_COMPLETE: id]: Close assigned tasks.
+- [SET_MODEL: name]: Switch model for coding vs thinking.
 
-PROJEKT-HUKOMMELSE (VIGTIGT):
-Du har adgang til en "database" over projekter i "web_design_workspace/projects.json".
-- Hver gang du opretter et nyt projekt, skal du opdatere denne fil med projektets detaljer (navn, sti, beskrivelse, last_updated).
-- Når brugeren beder om at skifte projekt, skal du navigere til "web_design_workspace/projects/[projektnavn]/" og genindlæse konteksten.
+RULES:
+- NO CHITCHAT.
+- WORKSPACE: web_design_workspace/projects/[project_name]/
+- FILE WRITING: Always 'mkdir -p' then use 'cat << 'EOF' > path' for safety.
+- PREVIEW: Access via /preview/[project_name]/index.html
 
-EKSPERTISE:
-Du er en ekspert i moderne frontend (React, Tailwind, Motion) og backend (Python, Node).
+ENVIRONMENT: CWD=${currentCwd} | OS=${osInfo} (Raspberry Pi/Linux).
 
-WORKSPACE STRUKTUR (VIGTIGT):
-Alle dine filer SKAL gemmes i "web_design_workspace/" mappen i projektets rod:
-- Kode/Projekter: web_design_workspace/projects/[projektnavn]/
-- Projekt Index: web_design_workspace/projects.json
-
-ARBEJDSPROCES (FEJLFRI FILSKRIVNING):
-For at undgå tomme projektmapper eller fejl i filskrivning, skal du ALTID følge denne protokol:
-1. OPRET MAPPER: Kør altid 'mkdir -p' før du skriver filer.
-   - Eksempel: [EXECUTE: mkdir -p web_design_workspace/projects/mit_projekt]
-2. SKRIV FILER SIKKERT: Brug her-doc (cat << 'EOF') til at skrive multi-line filer for at undgå problemer med anførselstegn (quotes).
-   - Eksempel: [EXECUTE: cat << 'EOF' > web_design_workspace/projects/mit_projekt/index.html
-<!DOCTYPE html>
-<html>...</html>
-EOF
-]
-3. VERIFICER: Efter hver filskrivning, kør 'ls -la' og 'wc -c' for at bekræfte at filen eksisterer og har indhold.
-
-DEPLOYMENT: 
-- Opret en "Dockerfile" i projektmappen ved hjælp af cat << 'EOF'.
-- Brug altid: [TRANSFER: chat] når du er helt færdig med at gemme koden.
-- SØRG FOR ALTID AT GEMME FILERNE (cat > stien) før du overdrager opgaven. En tom projektmappe er ikke en løst opgave.
-
-STILGUIDE:
-- NO CHITCHAT: Skriv kun din logik og [EXECUTE] kommandoer.
-- Moderne Design: Brug Tailwind (via CDN eller build).
-
-MODEL KNOWLEDGE BASE — C.A.T v2.0
-Du har adgang til følgende Ollama Cloud‑modeller.
-Hver model har en beskrivelse, tags, anbefalet agent‑brug og en capability‑matrix (0–10).
-
-Brug disse data til at forstå modellernes styrker, vælge den bedste model til en opgave og skifte model autonomt via [SET_MODEL: model_name].
-
-MODEL DATABASE:
-${models.map(m => {
-  const info = (modelsInfo as any)[m.name];
-  if (!info) return `- ${m.name}: Generel AI model`;
-  return `- ${m.name}: ${info.description} | Tags: ${info.tags.join(', ')} | Agents: ${info.agents.join(', ')} | Capabilities: ${JSON.stringify(info.capabilities)}`;
-}).join('\n')}
-
-Når du modtager en opgave, skal du:
-1. Identificere opgavens behov (reasoning, coding, vision, tools, context, speed)
-2. Matche behovene mod capability‑matrixen
-3. Vælge modellen med højeste matchscore
-4. Skifte model autonomt hvis nødvendigt ([SET_MODEL: model_name])
-
-Brug altid modeller med tools når du skal bruge terminal, filsystem eller browser.
-Brug altid modeller med vision når du skal analysere billeder eller websider.
-Brug altid modeller med thinking når opgaven kræver dyb reasoning.
-
-AGENTS:
-- chat: Generel brainstorm og systemstyring.
-- webdesign: Kodning, UI/UX og frontend udvikling.
-- security: Sikkerhedsanalyse, penetrationstest og log-audit.
-- ollamaWeb: Web research og interaktion (Søge, Fetch, Screenshot, Click/Type).
-- hermes: Avanceret tool-calling, API integrationer og CLI-baseret interaktion.
-
-For at overdrage opgaver, brug: [TRANSFER: agent_id].
-Eksempel: "Hvis du mangler web-info, brug: [TRANSFER: ollamaWeb]".
-VIGTIGT: NÅR DU ER HELT FÆRDIG MED DIN KODE-OPGAVE, SKAL DU RAPPORTERE TILBAGE TIL SUPERVISOR VED AT SKRIVE: [TRANSFER: chat] efterfulgt af en opsummering.
-
-FORMAT:
-Alle kommandoer skal leveres i formatet: [EXECUTE: kommando]. Forklar kort hvad du gør, før du præsenterer kommandoen.
-VIGTIGT: Du må KUN outputte kode i kode-blokke (markdown). Hvis du genererer en hel fil, så vis den i en kode-blok.
-
-NAVIGATION & LINKS:
-- Alle links (<a> tags) skal være interne (f.eks. href="#contact" eller href="about.html" hvis du har oprettet den).
-- VIGTIGT: Brug ALDRIG href="/" eller href="", da dette vil omdirigere brugeren væk fra previewet. Brug i stedet href="#" eller specifikke sektions-ID'er.
-- Lav ALDRIG links til eksterne domæner (som google.com) medmindre brugeren beder om det.
-- Sørg for at menu-punkter kun linker til sektioner eller sider der rent faktisk eksisterer i projektet.`;
+MODEL CAPABILITIES:
+${models.map(m => `- ${m.name}: ${JSON.stringify((modelsInfo as any)[m.name]?.capabilities || {})}`).join('\n')}`;
 
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
 
@@ -630,13 +586,61 @@ NAVIGATION & LINKS:
     }
   };
 
+  // Reactive CATOME Task Execution
+  useEffect(() => {
+    if (!isAgentMode || isLoading || !catomeStore || !onUpdateCatome) return;
+
+    const myPendingCatome = catomeStore.catomes.find(c => c.agent === 'webdesign' && c.status === 'pending');
+    if (myPendingCatome) {
+      // 1. Claim it
+      onUpdateCatome(myPendingCatome.id, { status: 'running' });
+      
+      // 2. Start working on it
+      const prompt = `[CATOME TASK ACTIVATED]
+ID: ${myPendingCatome.id}
+TASK: ${myPendingCatome.description}
+INPUT: ${JSON.stringify(myPendingCatome.input)}
+EXPECTED OUTPUT: ${myPendingCatome.output_expected}
+
+Please execute this coding task and report back with [CATOME_COMPLETE: ${myPendingCatome.id}] when finished, providing the result in JSON format.`;
+      
+      sendMessage(prompt);
+    }
+  }, [catomeStore?.catomes, isAgentMode, isLoading]);
+
+  // Handle CATOME Completion Reporting
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role === 'assistant' && lastMessage.content.includes('[CATOME_COMPLETE:') && onUpdateCatome) {
+      const match = lastMessage.content.match(/\[CATOME_COMPLETE:\s*(.*?)\]/);
+      if (match) {
+        const catomeId = match[1].trim();
+        let result = {};
+        try {
+          const jsonMatch = lastMessage.content.match(/```json\n([\s\S]*?)\n```/);
+          if (jsonMatch) result = JSON.parse(jsonMatch[1]);
+        } catch (e) {
+          console.warn("Failed to parse CATOME result JSON", e);
+        }
+        
+        onUpdateCatome(catomeId, { 
+          status: 'success', 
+          result,
+          updated_at: new Date().toISOString()
+        });
+      }
+    }
+  }, [messages]);
+
   const sendMessage = async (customInput?: string) => {
     const finalInput = customInput || input;
     if (!finalInput.trim() || !selectedModel || !apiKey || isLoading) return;
 
     const userMessage: Message = { role: 'user', content: finalInput };
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
+    const historyLimit = 15;
+    const historyToInclude = messages.slice(-historyLimit);
+    const newMessages = [...historyToInclude, userMessage];
+    setMessages(prev => [...prev, userMessage]);
     if (!customInput) setInput('');
     setIsLoading(true);
 

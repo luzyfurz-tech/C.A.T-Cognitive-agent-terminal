@@ -17,11 +17,12 @@ interface FileEntry {
 
 interface FileBrowserProps {
   apiKey: string;
+  selectedFile?: FileEntry | null;
   onFileSelect?: (file: FileEntry | null) => void;
   onAnalyze?: (file: FileEntry) => void;
 }
 
-export default function FileBrowser({ apiKey, onFileSelect, onAnalyze }: FileBrowserProps) {
+export default function FileBrowser({ apiKey, selectedFile, onFileSelect, onAnalyze }: FileBrowserProps) {
   const [currentPath, setCurrentPath] = useState<string>('');
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [selectedIdx, setSelectedIdx] = useState<number>(0);
@@ -324,9 +325,29 @@ export default function FileBrowser({ apiKey, onFileSelect, onAnalyze }: FileBro
       {/* NC Header */}
       <div className="flex-none p-4 border-b border-[#A8B2C0]/20 bg-[#0A0F1A]/50">
         <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <HardDrive className="w-5 h-5 text-[#6EC8FF]" />
-            <h2 className="font-serif italic text-lg font-bold text-[#A8B2C0]">File Commander</h2>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <HardDrive className="w-5 h-5 text-[#6EC8FF]" />
+              <h2 className="font-serif italic text-lg font-bold text-[#A8B2C0]">File Commander</h2>
+            </div>
+
+            {selectedFile && (
+              <div className="flex items-center gap-3 px-3 py-1.5 bg-[#6EC8FF]/10 border border-[#6EC8FF]/30 rounded-xl animate-in fade-in slide-in-from-left-2 shadow-lg group">
+                <FileText className="w-3.5 h-3.5 text-[#6EC8FF]" />
+                <div className="flex flex-col">
+                  <span className="text-[7px] font-black uppercase tracking-widest text-[#6EC8FF]/70">Context Locked</span>
+                  <span className="text-[9px] font-mono text-[#A8B2C0] truncate max-w-[120px]">
+                    {selectedFile.name}
+                  </span>
+                </div>
+                <button 
+                  onClick={() => onFileSelect?.(null)}
+                  className="p-1 hover:bg-[#6EC8FF]/20 rounded-md transition-colors text-[#6EC8FF] opacity-0 group-hover:opacity-100"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />

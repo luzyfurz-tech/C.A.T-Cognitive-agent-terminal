@@ -41,6 +41,7 @@ const LOGS_DIR = path.join(WEB_DESIGN_ROOT, "logs");
 const TEMP_DIR = path.join(WEB_DESIGN_ROOT, "temp");
 const DOCKER_DIR = path.join(WEB_DESIGN_ROOT, "docker");
 const PROJECTS_JSON_PATH = path.join(WEB_DESIGN_ROOT, "projects.json");
+const CATOMES_JSON_PATH = path.join(WEB_DESIGN_ROOT, "catomes.json");
 const AUDIT_LOG_PATH = path.join(LOGS_DIR, "audit.json");
 
 // In-memory audit log for quick access
@@ -49,6 +50,11 @@ let auditLogs: any[] = [];
 // Ensure projects.json exists
 if (!existsSync(PROJECTS_JSON_PATH)) {
   writeFileSync(PROJECTS_JSON_PATH, JSON.stringify({ active_project: null, projects: [] }, null, 2));
+}
+
+// Ensure catomes.json exists
+if (!existsSync(CATOMES_JSON_PATH)) {
+  writeFileSync(CATOMES_JSON_PATH, JSON.stringify({ active_mission: null, catomes: [] }, null, 2));
 }
 
 // Ensure audit.json exists
@@ -567,6 +573,94 @@ async function startServer() {
     }
   });
 
+  // --- CATOMES API ---
+
+  // Get all CATOMES
+  app.get("/api/catomes", async (req, res) => {
+    const apiKey = req.headers.authorization?.split(" ")[1];
+    if (!apiKey) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+      const data = await fs.readFile(CATOMES_JSON_PATH, "utf-8");
+      res.json(JSON.parse(data));
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create or Update a CATOME
+  app.post("/api/catomes", async (req, res) => {
+    const apiKey = req.headers.authorization?.split(" ")[1];
+    if (!apiKey) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+      const newCatome = req.body;
+      const data = JSON.parse(await fs.readFile(CATOMES_JSON_PATH, "utf-8"));
+      
+      const existingIndex = data.catomes.findIndex((c: any) => c.id === newCatome.id);
+      if (existingIndex > -1) {
+        data.catomes[existingIndex] = { ...data.catomes[existingIndex], ...newCatome, updated_at: new Date().toISOString() };
+      } else {
+        data.catomes.push({
+          ...newCatome,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          logs: newCatome.logs || [],
+          status: newCatome.status || "pending"
+        });
+      }
+
+      await fs.writeFile(CATOMES_JSON_PATH, JSON.stringify(data, null, 2));
+      res.json({ status: "Success", catome: newCatome });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update CATOME Status/Result
+  app.patch("/api/catomes/:id", async (req, res) => {
+    const { id } = req.params;
+    const { status, result, logs } = req.body;
+    const apiKey = req.headers.authorization?.split(" ")[1];
+    if (!apiKey) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+      const data = JSON.parse(await fs.readFile(CATOMES_JSON_PATH, "utf-8"));
+      const index = data.catomes.findIndex((c: any) => c.id === id);
+      
+      if (index === -1) return res.status(404).json({ error: "Catome not found" });
+
+      if (status) data.catomes[index].status = status;
+      if (result !== undefined) data.catomes[index].result = result;
+      if (logs) data.catomes[index].logs = [...(data.catomes[index].logs || []), ...logs];
+      data.catomes[index].updated_at = new Date().toISOString();
+
+      await fs.writeFile(CATOMES_JSON_PATH, JSON.stringify(data, null, 2));
+      res.json({ status: "Success", catome: data.catomes[index] });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Mission Control: Start a new mission
+  app.post("/api/mission/start", async (req, res) => {
+    const { mission_id, clear_old = true } = req.body;
+    const apiKey = req.headers.authorization?.split(" ")[1];
+    if (!apiKey) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+      const data = JSON.parse(await fs.readFile(CATOMES_JSON_PATH, "utf-8"));
+      data.active_mission = mission_id;
+      if (clear_old) {
+        data.catomes = [];
+      }
+      await fs.writeFile(CATOMES_JSON_PATH, JSON.stringify(data, null, 2));
+      res.json({ status: "Success", mission_id });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // API Proxy for Ollama Chat (Streaming)
   app.post("/api/chat", async (req, res) => {
     const { model, messages, stream } = req.body;
@@ -667,10 +761,17 @@ async function startServer() {
 
     let browser;
     try {
-      browser = await chromium.launch({
+      const launchOptions: any = {
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
-      });
+      };
+
+      // Support for Raspberry Pi or custom Chromium installs
+      if (process.env.CHROMIUM_PATH) {
+        launchOptions.executablePath = process.env.CHROMIUM_PATH;
+      }
+
+      browser = await chromium.launch(launchOptions);
       const context = await browser.newContext({
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
       });
@@ -721,10 +822,16 @@ async function startServer() {
 
     let browser;
     try {
-      browser = await chromium.launch({
+      const launchOptions: any = {
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
-      });
+      };
+
+      if (process.env.CHROMIUM_PATH) {
+        launchOptions.executablePath = process.env.CHROMIUM_PATH;
+      }
+
+      browser = await chromium.launch(launchOptions);
       const context = await browser.newContext({
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
       });
@@ -778,10 +885,16 @@ async function startServer() {
 
     let browser;
     try {
-      browser = await chromium.launch({
+      const launchOptions: any = {
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
-      });
+      };
+
+      if (process.env.CHROMIUM_PATH) {
+        launchOptions.executablePath = process.env.CHROMIUM_PATH;
+      }
+
+      browser = await chromium.launch(launchOptions);
       const context = await browser.newContext({
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
         viewport: { width: 1280, height: 720 }
