@@ -10,6 +10,7 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "start": "tsx server.ts",
+    "prod": "NODE_ENV=production tsx server.ts",
     "setup-pi": "node scripts/setup-pi.js"
   },
   "dependencies": {

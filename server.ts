@@ -307,6 +307,114 @@ async function startServer() {
     }
   });
 
+  // Knowledge Base (Persistent Neural Memory)
+  app.post("/api/knowledge/save", async (req, res) => {
+    const { key, value, tags } = req.body;
+    const apiKey = req.headers.authorization?.split(" ")[1];
+    if (!apiKey) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+      dbService.saveKnowledge(key, value, tags || "");
+      await logAudit(`Knowledge Saved: ${key}`, "Success", `Tags: ${tags}`, "", "knowledge");
+      res.json({ status: "Success" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/knowledge/search", async (req, res) => {
+    const { q } = req.query;
+    const apiKey = req.headers.authorization?.split(" ")[1];
+    if (!apiKey) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+      const results = dbService.searchKnowledge(q as string || "");
+      res.json({ results });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // System State Snapshots (Rollback System)
+  app.post("/api/system/snapshot", async (req, res) => {
+    const apiKey = req.headers.authorization?.split(" ")[1];
+    if (!apiKey) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+      const snapshotId = `snap-${Date.now()}`;
+      const snapshotPath = path.join(TEMP_DIR, `${snapshotId}.zip`);
+      const output = createWriteStream(snapshotPath);
+      const archive = archiver('zip', { zlib: { level: 9 } });
+
+      output.on('close', () => {
+        logAudit(`System Snapshot Created: ${snapshotId}`, "Success", "", "", "system");
+        res.json({ status: "Success", snapshotId });
+      });
+
+      archive.on('error', (err) => { throw err; });
+      archive.pipe(output);
+      archive.directory(WEB_PROJECTS_DIR, false);
+      await archive.finalize();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/system/rollback", async (req, res) => {
+    const { snapshotId } = req.body;
+    const apiKey = req.headers.authorization?.split(" ")[1];
+    if (!apiKey) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+      const snapshotPath = path.join(TEMP_DIR, `${snapshotId}.zip`);
+      if (!existsSync(snapshotPath)) throw new Error("Snapshot not found");
+
+      // Simple rollback: Wipe and unzip
+      await execAsync(`rm -rf "${WEB_PROJECTS_DIR}"/*`);
+      await execAsync(`unzip -o "${snapshotPath}" -d "${WEB_PROJECTS_DIR}"`);
+      
+      await logAudit(`System Rollback Executed: ${snapshotId}`, "Success", "", "", "system");
+      res.json({ status: "Success" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Visual Feedback (Vision Capture)
+  app.post("/api/vision/capture", async (req, res) => {
+    const { url } = req.body;
+    const apiKey = req.headers.authorization?.split(" ")[1];
+    if (!apiKey) return res.status(401).json({ error: "Unauthorized" });
+
+    let browser;
+    try {
+      const launchOptions: any = { headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] };
+      if (process.env.CHROMIUM_PATH) launchOptions.executablePath = process.env.CHROMIUM_PATH;
+
+      browser = await chromium.launch(launchOptions);
+      const page = await browser.newPage();
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+      
+      const filename = `vision-${Date.now()}.png`;
+      const screenshotPath = path.join(SCREENSHOTS_DIR, filename);
+      await page.screenshot({ path: screenshotPath });
+      
+      const data = readFileSync(screenshotPath);
+      const base64 = data.toString('base64');
+
+      res.json({ 
+        status: "Success", 
+        screenshotUrl: `/preview/${filename}`,
+        base64: `data:image/png;base64,${base64}`
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    } finally {
+      if (browser) await browser.close();
+    }
+  });
+
   app.delete("/api/chat/history/:viewId", (req, res) => {
     try {
       dbService.clearChatMessages(req.params.viewId);

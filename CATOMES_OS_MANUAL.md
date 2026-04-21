@@ -1,12 +1,28 @@
 # 🐱 CATOMES OS: Operator Manual & System Description
-**Version 4.20 // Neural Dynamics Core**
+**Version 4.25 // Neural-Vision Core**
 
 ## 1. Project Overview
 CATOMES OS (Cognitive Agent Terminal Operating System) is a multi-agent orchestration platform designed for autonomous task execution, web research, software development, and system security. It provides a unified "Cyber-Nordic" interface for interacting with various specialized AI agents that can work independently or collaboratively to complete complex missions.
 
 ---
 
-## 2. System Architecture (The Agenter)
+## 2. Neural & Visual Subsystems (New)
+
+### 🧠 Persistent Neural Memory
+*   **Protocol**: `[MEM_SAVE]`, `[MEM_LOAD]`
+*   **Function**: The Supervisor uses a dedicated Knowledge Base to store "Lessons Learned" and successful configurations. This prevents repetitive errors across different missions. Memory is persistent across sessions and system reboots.
+
+### 👁️ Visual Feedback Loop (Sight)
+*   **Protocol**: `[VISION_QA]`
+*   **Function**: The system can now "see" the Live Preview. By triggering a capture, the agent receives a high-resolution frame of the current UI, allowing for visual QA and precision adjustments (spacing, color, layout) that code analysis alone cannot achieve.
+
+### 🛡️ System Guard (Rollback Engine)
+*   **Protocol**: `[SNAPSHOT]`, `[ROLLBACK]`
+*   **Function**: Provides a safety-net for autonomous operations. Before complex code changes or mass deletions, the system creates an immutable state snapshot. If an agent error occurs, the entire project can be reverted to a stable state with a single command.
+
+---
+
+## 3. System Architecture (The Agenter)
 
 The system is divided into specialized "Views", each powered by a custom-prompted agent:
 

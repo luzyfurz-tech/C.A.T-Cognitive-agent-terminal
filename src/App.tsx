@@ -29,6 +29,7 @@ interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   thinking?: string;
+  images?: string[]; // Base64 encoded images
   command?: {
     text: string;
     status: 'pending' | 'executing' | 'success' | 'error';
@@ -52,6 +53,7 @@ interface Model {
 
 const DEFAULT_API_KEY = '177ce4df955743d8a338c841383e5002.0Lus05Xg-KF5ilWRNqSegtPo';
 const DEFAULT_HOST = 'https://ollama.com';
+const PORT = 3939;
 
 export default function App() {
   const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('ollama_api_key') || DEFAULT_API_KEY);
@@ -107,6 +109,7 @@ export default function App() {
   const [currentCwd, setCurrentCwd] = useState<string>('');
   const [isBooting, setIsBooting] = useState(true);
   const [catomeStore, setCatomeStore] = useState<CatomeStore>({ active_mission: null, catomes: [] });
+  const [visionFrame, setVisionFrame] = useState<string | null>(null);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const triggeredTransfers = useRef<Set<number>>(new Set());
@@ -315,6 +318,90 @@ export default function App() {
         // Full autonomy enabled - execute all commands (including user-initiated ones for rapid workflow)
         executeCommand(lastMessageIndex, cmdText);
       }
+
+      // Check for Memory protocols
+      const memSaveMatch = lastMessage.content.match(/\[MEM_SAVE:\s*(\{.*?\})\]/s);
+      if (memSaveMatch && !triggeredTransfers.current.has(lastMessageIndex + 1000)) {
+        triggeredTransfers.current.add(lastMessageIndex + 1000);
+        try {
+          const data = JSON.parse(memSaveMatch[1]);
+          fetch('/api/knowledge/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+            body: JSON.stringify(data)
+          }).then(() => sendMessage("[SYSTEM]: Knowledge stored in Neural Memory. (indexed by " + (data.tags || "default") + ")"));
+        } catch (e) {
+          sendMessage("[SYSTEM ERROR]: Failed to parse MEM_SAVE JSON.");
+        }
+      }
+
+      const memLoadMatch = lastMessage.content.match(/\[MEM_LOAD:\s*(.*?)\]/);
+      if (memLoadMatch && !triggeredTransfers.current.has(lastMessageIndex + 2000)) {
+        triggeredTransfers.current.add(lastMessageIndex + 2000);
+        const query = memLoadMatch[1].trim();
+        fetch(`/api/knowledge/search?q=${encodeURIComponent(query)}`, {
+          headers: { Authorization: `Bearer ${apiKey}` }
+        })
+        .then(r => r.json())
+        .then(data => {
+          const results = data.results.map((r: any) => `[${r.key}]: ${r.value} (${r.tags})`).join('\n---\n');
+          sendMessage(`[SYSTEM]: Neural Memory Results for "${query}":\n\n${results || "No entries found."}`);
+        });
+      }
+
+      // Snapshot / Rollback
+      if (lastMessage.content.includes('[SNAPSHOT]') && !triggeredTransfers.current.has(lastMessageIndex + 3000)) {
+        triggeredTransfers.current.add(lastMessageIndex + 3000);
+        fetch('/api/system/snapshot', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${apiKey}` }
+        })
+        .then(r => r.json())
+        .then(data => sendMessage(`[SYSTEM]: Snapshot created successfully: ${data.snapshotId}`));
+      }
+
+      const rollbackMatch = lastMessage.content.match(/\[ROLLBACK:\s*(.*?)\]/);
+      if (rollbackMatch && !triggeredTransfers.current.has(lastMessageIndex + 4000)) {
+        triggeredTransfers.current.add(lastMessageIndex + 4000);
+        const sid = rollbackMatch[1].trim();
+        fetch('/api/system/rollback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({ snapshotId: sid })
+        })
+        .then(r => r.json())
+        .then(data => {
+          if (data.status === 'Success') {
+            sendMessage(`[SYSTEM]: ROLLBACK COMPLETE. System restored to state: ${sid}.`);
+          } else {
+            sendMessage(`[SYSTEM ERROR]: Rollback failed: ${data.error}`);
+          }
+        });
+      }
+
+      // Vision QA
+      if (lastMessage.content.includes('[VISION_QA]') && !triggeredTransfers.current.has(lastMessageIndex + 5000)) {
+        triggeredTransfers.current.add(lastMessageIndex + 5000);
+        // We capture the preview (usually rasp.local:3939/preview/...)
+        // For simplicity, we assume we capture the currently active project
+        fetch('/api/vision/capture', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({ url: `http://localhost:${PORT}/preview/index.html` }) // Simplified for demo
+        })
+        .then(r => r.json())
+        .then(data => {
+          if (data.base64) {
+             const visualAnalysisPrompt = "[VISUAL CONTEXT RECEIVED]: I have captured the current Live Preview. Analyze the attached frame and correlate with requirements. What is your visual assessment?";
+             // In a more complex setup, we'd send the image to the model here.
+             // For now, we simulate the "Sight" by providing the image data to the next prompt.
+             setVisionFrame(data.base64);
+             sendMessage(visualAnalysisPrompt);
+          } else {
+            sendMessage("[SYSTEM ERROR]: Vision sensor failed to capture preview.");
+          }
+        });
+      }
     } else if (isAgentMode && !isLoading && lastMessage?.role === 'assistant' && lastMessage.command) {
       if (lastMessage.command.status === 'success' || lastMessage.command.status === 'error') {
         if (!triggeredTransfers.current.has(lastMessageIndex)) {
@@ -395,7 +482,14 @@ export default function App() {
   const sendMessage = async (content: string) => {
     if (!content.trim() || !viewModels.chat || !apiKey || isLoading) return;
 
-    const userMessage: Message = { role: 'user', content };
+    const userMessage: Message = { 
+      role: 'user', 
+      content,
+      images: visionFrame ? [visionFrame.split(',')[1] || visionFrame] : undefined
+    };
+    
+    // Clear vision frame after use
+    if (visionFrame) setVisionFrame(null);
     
     // Log user directive and set supervisor to working
     if (content !== '[SYSTEM AUTO-REPLY] Command execution finished. Output is in the system context. What is your next step? If the user\'s mission is fully completed, summarize the outcome.') {
@@ -474,6 +568,11 @@ PROTOCOLS:
 - [EXECUTE: command]: Run system/file checks (Bash/Linux).
 - [SET_MODEL: model_name]: Switch active model based on needs.
 - [CATOME: {json}]: Task specific sub-goals.
+- [MEM_SAVE: {key, value, tags}]: Save knowledge for future missions.
+- [MEM_LOAD: query]: Retrieve knowledge from the Knowledge Base.
+- [SNAPSHOT]: Take a state snapshot before major changes.
+- [ROLLBACK: id]: Revert back to a known snapshot.
+- [VISION_QA]: Request a visual check of the web preview (Supervisor will provide the image).
 
 AGENT RECOGNITION:
 - chat: You (Supervisor/Management).
@@ -939,6 +1038,45 @@ Please acknowledge, proceed with the mission, and report back to the supervisor 
                       FOLLOW
                     </button>
                   </div>
+                </div>
+
+                <div className="h-4 w-[1px] bg-border mx-2" />
+
+                {/* Neural Memory & Snapshots */}
+                <div className="flex items-center gap-2">
+                   <div 
+                     className={cn(
+                       "flex items-center gap-1.5 px-2 py-1 rounded bg-white/5 border border-white/10 transition-all",
+                       "hover:border-brand/40 group"
+                     )}
+                     title="Neural Memory Status"
+                   >
+                     <Database className="w-3 h-3 text-brand/60 group-hover:text-brand" />
+                     <span className="text-[8px] font-black tracking-tighter text-text-muted uppercase">MEM: ONLINE</span>
+                   </div>
+
+                   <div 
+                     className={cn(
+                       "flex items-center gap-1.5 px-2 py-1 rounded bg-white/5 border border-white/10 transition-all",
+                       "hover:border-emerald-400/40 group"
+                     )}
+                     title="System Guard Protection"
+                   >
+                     <Shield className="w-3 h-3 text-emerald-400/60 group-hover:text-emerald-400" />
+                     <span className="text-[8px] font-black tracking-tighter text-text-muted uppercase">GUARD: ACTIVE</span>
+                   </div>
+
+                   {visionFrame && (
+                     <motion.div 
+                       initial={{ opacity: 0, scale: 0.8 }}
+                       animate={{ opacity: 1, scale: 1 }}
+                       className="flex items-center gap-1.5 px-2 py-1 rounded bg-brand/20 border border-brand/40"
+                       title="Visual Data Pending for next prompt"
+                     >
+                        <Maximize2 className="w-3 h-3 text-brand animate-pulse" />
+                        <span className="text-[8px] font-black tracking-tighter text-brand uppercase">SIGHT PENDING</span>
+                     </motion.div>
+                   )}
                 </div>
               </div>
 

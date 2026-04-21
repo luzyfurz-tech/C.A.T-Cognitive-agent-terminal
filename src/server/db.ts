@@ -41,6 +41,15 @@ db.exec(`
     thinking TEXT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS knowledge_base (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT UNIQUE,
+    value TEXT,
+    tags TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 export interface AgentLog {
@@ -89,6 +98,28 @@ export const dbService = {
 
   clearChatMessages: (view_id: string) => {
     return db.prepare('DELETE FROM chat_messages WHERE view_id = ?').run(view_id);
+  },
+  
+  saveKnowledge: (key: string, value: string, tags: string = '') => {
+    const stmt = db.prepare(`
+      INSERT INTO knowledge_base (key, value, tags, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        tags = excluded.tags,
+        updated_at = CURRENT_TIMESTAMP
+    `);
+    return stmt.run(key, value, tags);
+  },
+
+  searchKnowledge: (query: string) => {
+    const stmt = db.prepare(`
+      SELECT * FROM knowledge_base 
+      WHERE key LIKE ? OR value LIKE ? OR tags LIKE ? 
+      ORDER BY updated_at DESC
+    `);
+    const q = `%${query}%`;
+    return stmt.all(q, q, q);
   }
 };
 
