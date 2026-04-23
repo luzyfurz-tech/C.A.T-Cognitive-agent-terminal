@@ -90,4 +90,16 @@ The header provides a live medical report of your hardware:
 6.  **Summary**: Supervisor saves the project DNA to the **Neural Core** and reports "Mission Accomplished."
 
 ---
-**NEURO-LINK: OPTIMIZED // POSTGRES: SYNCED // SYSTEMS: GO**
+
+## 8. Hardware Profiles (Special Operations)
+
+### 🐯 Project "Siberian Tiger" (Sleeper Mode)
+*   **Target**: BeagleBone Black (512MB RAM / 1GHz ARM).
+*   **Optimization Layer**:
+    *   **Chunk Sharding**: Monolithic bundles split into <200kB segments to prevent browser heap exhaustion.
+    *   **Static Pre-compression**: All assets pre-compressed with Gzip (.gz) and Brotli (.br) to offload the BeagleBone's CPU during delivery.
+    *   **Memory-Lean Build**: Disabled sourcemaps and compressed-size reporting to ensure builds complete within the 512MB RAM + Swap envelope.
+    *   **Postgres Isolation**: Database runs as a background Docker unit with strict memory limits (configured in `docker-compose.yml`).
+
+---
+**NEURO-LINK: OPTIMIZED // POSTGRES: SYNCED // SYSTEMS: GO // SIBERIAN TIGER: ACTIVE**
