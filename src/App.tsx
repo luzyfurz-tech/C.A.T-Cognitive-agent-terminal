@@ -942,7 +942,7 @@ The Supervisor has delegated this task to you.
 CONTEXT / INSTRUCTIONS:
 ${content}
 
-Please acknowledge, proceed with the mission, and report back to the supervisor via [TRANSFER: chat] when finished.`;
+Please acknowledge, proceed with the mission, and report back to the supervisor via the command !!TRANSFER: chat!! (replace !! with brackets []) when finished.`;
   };
 
   const handleTransfer = (target: AgentType, content?: string) => {

@@ -317,7 +317,7 @@ Du arbejder i "web_design_workspace/security/" mappen.`;
 
           const cmdStatusMsg = lastMessage.command.status === 'error'
             ? "[SYSTEM AUTO-REPLY] Command FAILED! Check the output for errors and adjust your security analysis immediately."
-            : "[SYSTEM AUTO-REPLY] Command execution finished. What is your next step? If the analysis is completely done, use [TRANSFER: chat] to report back, or transfer directly to [TRANSFER: webdesign] if you need them to fix the code.";
+            : "[SYSTEM AUTO-REPLY] Command execution finished. What is your next step? If the analysis is completely done, use the TRANSFER command to report back to chat, or transfer directly to webdesign if you need them to fix the code.";
           // The command finished executing. Trigger the next loop for full autonomy.
           setTimeout(() => {
             handleSubmit(undefined, cmdStatusMsg);

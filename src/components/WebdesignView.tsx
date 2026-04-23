@@ -326,7 +326,7 @@ ${models.map(m => `- ${m.name}: ${JSON.stringify((modelsInfo as any)[m.name]?.ca
 
           const cmdStatusMsg = lastMessage.command.status === 'error'
             ? "[SYSTEM AUTO-REPLY] Command FAILED! Check the output for errors and fix your code/command immediately."
-            : "[SYSTEM AUTO-REPLY] Command execution finished. What is your next step? If the coding task is completely done, use [TRANSFER: chat] to report back, or transfer directly to [TRANSFER: security] if an audit is needed.";
+            : "[SYSTEM AUTO-REPLY] Command execution finished. What is your next step? If the coding task is completely done, use the TRANSFER command to report back to chat, or transfer directly to security if an audit is needed.";
           setTimeout(() => {
             // @ts-ignore
             handleSubmit({ preventDefault: () => {} }, cmdStatusMsg);
