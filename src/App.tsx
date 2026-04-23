@@ -117,6 +117,7 @@ export default function App() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const triggeredTransfers = useRef<Set<number>>(new Set());
+  const lastFollowedCatomeId = useRef<string | null>(null);
 
   const ThinkingBlock = ({ thinking }: { thinking: string }) => {
     const [isExpanded, setIsExpanded] = useState(false);
@@ -261,7 +262,9 @@ export default function App() {
   useEffect(() => {
     if (!isFollowAgentActive || !isAgentMode) return;
     
-    const activeCatome = catomeStore.catomes.find(c => c.status === 'running');
+    // Prioritize running tasks that aren't the one we just followed
+    const activeCatome = catomeStore.catomes.find(c => c.status === 'running' && c.id !== lastFollowedCatomeId.current);
+    
     if (activeCatome) {
       const agentToView: Record<string, typeof currentView> = {
         'hermes': 'hermes',
@@ -273,8 +276,15 @@ export default function App() {
       
       const targetView = agentToView[activeCatome.agent];
       if (targetView && targetView !== currentView) {
+        lastFollowedCatomeId.current = activeCatome.id;
         setCurrentView(targetView);
       }
+    }
+    
+    // If no new running tasks, but the current one is still running, check if we should reset the ID if it finishes
+    const currentRunning = catomeStore.catomes.find(c => c.status === 'running');
+    if (!currentRunning) {
+      lastFollowedCatomeId.current = null;
     }
   }, [catomeStore.catomes, isFollowAgentActive, isAgentMode, currentView]);
 
@@ -462,8 +472,12 @@ export default function App() {
     };
     fetchStatus();
     const interval = setInterval(fetchStatus, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    const catomeInterval = setInterval(fetchCatomes, 3000); // Poll missions more frequently
+    return () => {
+      clearInterval(interval);
+      clearInterval(catomeInterval);
+    };
+  }, [apiKey]);
 
   const fetchModels = async () => {
     if (!apiKey) return;
